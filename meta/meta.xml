@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<app version="1">
+  <name>Arena Assault</name>
+  <coder>Arena Assault Team</coder>
+  <version>0.5.0</version>
+  <release_date>20260824000000</release_date>
+  <short_description>3D sci-fi shooter for Wii U</short_description>
+  <long_description>Mission-driven 3D shooter with Scout, Soldier and Heavy AI, miniboss encounter, GamePad tactical objectives, skeletal animation, particles and audio.</long_description>
+</app>
