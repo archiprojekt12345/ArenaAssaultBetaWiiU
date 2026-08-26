@@ -18,6 +18,17 @@ jobs:
       - name: Checkout V11
         uses: actions/checkout@v4
 
+      - name: Run host performance tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          g++ -std=c++17 -Wall -Wextra -Wpedantic -Iinclude tests/render_policy_tests.cpp -o /tmp/render_policy_test
+          /tmp/render_policy_test
+          g++ -std=c++17 -Wall -Wextra -Wpedantic -Iinclude tests/skinning_tests.cpp -o /tmp/skinning_test
+          /tmp/skinning_test
+          g++ -std=c++17 -Wall -Wextra -Wpedantic -Iinclude tests/world_asset_layout_tests.cpp -o /tmp/world_asset_layout_test
+          /tmp/world_asset_layout_test
+
       - name: Expand V11 assets
         shell: bash
         run: |
@@ -32,6 +43,26 @@ jobs:
             enemy_body.aam2; do
             test -s "content/assets/meshes/$f"
           done
+
+      - name: Validate expanded assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/validate_assets.py
+          python3 - <<'PY'
+          import os, struct
+          root='content/assets/meshes'
+          for name in [
+              'corridor_black.aam','corridor_blue.aam','corridor_detail.aam',
+              'corridor_glass.aam','corridor_gray.aam','corridor_light.aam',
+              'corridor_white.aam','corridor_yellow.aam','supply_crate.aam']:
+              p=os.path.join(root,name)
+              b=open(p,'rb').read()
+              magic,version,vc,ic=struct.unpack_from('<4sIII',b,0)
+              assert magic==b'AAM1' and version==1 and vc>0 and ic>=3 and ic%3==0
+              assert len(b)==16+vc*32+ic*4
+          print('V11 world assets: OK')
+          PY
 
       - name: Download CafeGLSL host compiler
         shell: bash
