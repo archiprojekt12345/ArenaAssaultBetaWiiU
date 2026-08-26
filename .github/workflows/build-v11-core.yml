@@ -28,6 +28,8 @@ jobs:
           /tmp/skinning_test
           g++ -std=c++17 -Wall -Wextra -Wpedantic -Iinclude tests/world_asset_layout_tests.cpp -o /tmp/world_asset_layout_test
           /tmp/world_asset_layout_test
+          g++ -std=c++17 -Wall -Wextra -Wpedantic -Iinclude tests/performance_geometry_tests.cpp -o /tmp/performance_geometry_test
+          /tmp/performance_geometry_test
 
       - name: Expand V11 assets
         shell: bash
