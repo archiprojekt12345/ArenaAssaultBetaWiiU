@@ -14,6 +14,7 @@
 #include "camera.hpp"
 #include "material.hpp"
 #include "mesh.hpp"
+#include "render_policy.hpp"
 #include "texture.hpp"
 
 namespace aa {
@@ -22,6 +23,12 @@ class Renderer {
 public:
     static constexpr std::uint32_t kMaxVertices3D = 65536;
     static constexpr std::uint32_t kMaxVertices2D = 32768;
+
+    struct RenderStats {
+        std::uint32_t batches3D{};
+        std::uint32_t submittedTriangles{};
+        std::uint32_t culledMeshes{};
+    };
 
     bool init(const char* contentRoot);
     void shutdown();
@@ -43,6 +50,7 @@ public:
     void flush2D();
 
     bool usingExternalAtlas() const { return atlas_.loadedExternal(); }
+    const RenderStats& stats() const { return stats_; }
 
 private:
     struct Vertex3D {
@@ -64,6 +72,8 @@ private:
     bool initBuffer(GX2RBuffer& buffer, std::size_t elemSize, std::uint32_t elemCount);
     void destroyShaderGroup(WHBGfxShaderGroup& group);
     void pushTri3D(const Vertex3D& a, const Vertex3D& b, const Vertex3D& c);
+    void flush3DBatch();
+    bool meshVisible(const MeshBounds& bounds, const Transform& transform) const;
     Vertex3D makeVertex(const Vec3& position, const Vec3& normal,
                         const Vec2& uv, const Material& material) const;
     Vec2 atlasUV(const Vec2& uv, const Material& material) const;
@@ -77,6 +87,10 @@ private:
     std::vector<Vertex2D> uiVertices_;
     TextureAtlas atlas_{};
     std::string contentRoot_{};
+
+    Camera currentCamera_{};
+    bool cameraValid_{};
+    RenderStats stats_{};
 
     alignas(256) float sceneUniformBlock_[48]{};
 };
