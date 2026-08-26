@@ -30,7 +30,7 @@ jobs:
       - name: Compile shaders
         shell: bash
         run: |
-          CAFEGLSL_COMPILER=/tmp/glslcompiler.elf ./tools/compile_shaders.sh
+          CAFEGLSL_COMPILER=/tmp/glslcompiler.elf bash ./tools/compile_shaders.sh
           test -s content/shaders/scene3d.gsh
           test -s content/shaders/ui2d.gsh
 
