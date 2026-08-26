@@ -20,22 +20,6 @@ jobs:
         with:
           ref: feature/v11-renderer-optimization
 
-      - name: Install Wii U dependencies
-        shell: bash
-        run: |
-          set -euo pipefail
-          for i in 1 2 3; do
-            echo "Syncing devkitPro package databases (attempt $i/3)"
-            if dkp-pacman -Syu --noconfirm; then
-              break
-            fi
-            if [ "$i" = 3 ]; then
-              exit 1
-            fi
-            sleep 5
-          done
-          dkp-pacman -S --needed --noconfirm wiiu-dev wut-tools
-
       - name: Expand V11 assets
         shell: bash
         run: |
@@ -54,6 +38,7 @@ jobs:
       - name: Download CafeGLSL host compiler
         shell: bash
         run: |
+          set -euo pipefail
           python3 - <<'PY'
           import urllib.request
           url = 'https://github.com/Exzap/CafeGLSL/releases/download/v0.2.0/glslcompiler.elf'
@@ -77,13 +62,14 @@ jobs:
           /opt/devkitpro/portlibs/wiiu/bin/powerpc-eabi-cmake \
             -S . -B build -DCMAKE_BUILD_TYPE=Release
 
-      - name: Build WUHB
+      - name: Build RPX and WUHB
         shell: bash
         run: |
           set -euo pipefail
           cmake --build build -j2
           test -s build/arena_assault.rpx
           test -s build/ArenaAssault.wuhb
+          test -s build/sd/wiiu/apps/ArenaAssault/ArenaAssault.wuhb
 
       - name: Package Aroma SD ZIP
         shell: bash
@@ -95,8 +81,16 @@ jobs:
           cp build/ArenaAssault.wuhb ci-artifact/ArenaAssault.wuhb
           cp build/ArenaAssault.wuhb ci-artifact/wiiu/apps/ArenaAssault/ArenaAssault.wuhb
           cp ArenaAssault_Aroma_SD_V11.zip ci-artifact/ArenaAssault_Aroma_SD_V11.zip
+          python3 - <<'PY'
+          import zipfile
+          p='ArenaAssault_Aroma_SD_V11.zip'
+          with zipfile.ZipFile(p) as z:
+              assert z.testzip() is None
+              assert 'wiiu/apps/ArenaAssault/ArenaAssault.wuhb' in z.namelist()
+          print('ZIP verification OK')
+          PY
 
-      - name: Upload V11 release
+      - name: Upload V11 Aroma release
         uses: actions/upload-artifact@v4
         with:
           name: ArenaAssault-V11-Aroma-SD
