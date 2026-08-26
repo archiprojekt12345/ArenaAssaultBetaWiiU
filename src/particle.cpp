@@ -120,7 +120,7 @@ void ParticleSystem::render(Renderer& renderer) const {
         m.diffuse = mulColor(c, 0.75f);
         m.textureMix = 0.0f;
         const float s = p.size * (0.65f + 0.35f*alpha);
-        renderer.submitBox(p.pos,{s,s,s},0.0f,m);
+        renderer.submitBillboardQuad(p.pos,s,m);
     }
 }
 
