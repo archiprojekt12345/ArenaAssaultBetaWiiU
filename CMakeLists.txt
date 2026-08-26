@@ -28,15 +28,9 @@ add_executable(arena_assault
 
 target_include_directories(arena_assault PRIVATE include)
 
-target_link_libraries(arena_assault PRIVATE
-    coreinit
-    vpad
-    sndcore2
-    whb
-    gfd
-    gx2
-    proc_ui
-)
+# WUT's CafeOS toolchain automatically links the standard libwut import archive.
+# Do not add coreinit/vpad/gx2/etc. as separate -l libraries: current WUT folds
+# Cafe OS import stubs into libwut and those standalone archives do not exist.
 
 target_compile_options(arena_assault PRIVATE
     -Wall
