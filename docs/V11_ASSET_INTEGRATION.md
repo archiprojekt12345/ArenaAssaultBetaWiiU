@@ -25,3 +25,7 @@ The corridor is a repeatable 3 m slice of the uploaded sci-fi corridor, kept as 
 Asset files are optional: if one is missing, renderer initialization continues and logs the missing asset. This keeps old content packages usable while V11 content is being iterated.
 
 A final Aroma `.wuhb` must be rebuilt after copying these files into `content/assets/meshes/`, because WUHB embeds `/vol/content` at build time.
+
+## Build verification
+
+The V11 branch is compiled with current devkitPro/WUT and CafeGLSL in GitHub Actions before final Aroma packaging. This catches PowerPC/WUT compatibility errors in the renderer before the `.wuhb` is assembled with the V11 binary asset pack.
