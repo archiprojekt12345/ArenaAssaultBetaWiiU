@@ -1,4 +1,4 @@
-name: Build V11 Wii U Core
+name: Build V11 Wii U Release
 
 on:
   push:
@@ -15,12 +15,28 @@ jobs:
     container: devkitpro/devkitppc:latest
 
     steps:
-      - name: Checkout
+      - name: Checkout V11
         uses: actions/checkout@v4
+
+      - name: Expand V11 assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s tools/v11_assets/v11_meshes.tar.xz
+          mkdir -p content/assets/meshes
+          tar -xJf tools/v11_assets/v11_meshes.tar.xz -C content/assets/meshes
+          for f in \
+            corridor_black.aam corridor_blue.aam corridor_detail.aam \
+            corridor_glass.aam corridor_gray.aam corridor_light.aam \
+            corridor_white.aam corridor_yellow.aam supply_crate.aam \
+            enemy_body.aam2; do
+            test -s "content/assets/meshes/$f"
+          done
 
       - name: Download CafeGLSL host compiler
         shell: bash
         run: |
+          set -euo pipefail
           python3 - <<'PY'
           import urllib.request
           url = 'https://github.com/Exzap/CafeGLSL/releases/download/v0.2.0/glslcompiler.elf'
@@ -31,38 +47,50 @@ jobs:
       - name: Compile shaders
         shell: bash
         run: |
-          CAFEGLSL_COMPILER=/tmp/glslcompiler.elf ./tools/compile_shaders.sh
+          set -euo pipefail
+          CAFEGLSL_COMPILER=/tmp/glslcompiler.elf bash ./tools/compile_shaders.sh
           test -s content/shaders/scene3d.gsh
           test -s content/shaders/ui2d.gsh
 
-      - name: Configure Wii U build
+      - name: Configure Wii U release
         shell: bash
         run: |
+          set -euo pipefail
           rm -rf build
           /opt/devkitpro/portlibs/wiiu/bin/powerpc-eabi-cmake \
             -S . -B build -DCMAKE_BUILD_TYPE=Release
 
-      - name: Build RPX
+      - name: Build RPX and WUHB
         shell: bash
         run: |
-          cmake --build build -j2 --target arena_assault
+          set -euo pipefail
+          cmake --build build -j2
           test -s build/arena_assault.rpx
+          test -s build/ArenaAssault.wuhb
+          test -s build/sd/wiiu/apps/ArenaAssault/ArenaAssault.wuhb
 
-      - name: Stage core artifact
+      - name: Package Aroma SD ZIP
         shell: bash
         run: |
-          mkdir -p ci-artifact/shaders
-          cp build/arena_assault.rpx ci-artifact/arena_assault.rpx
-          cp content/shaders/scene3d.gsh ci-artifact/shaders/scene3d.gsh
-          cp content/shaders/ui2d.gsh ci-artifact/shaders/ui2d.gsh
-          WUHBTOOL="$(command -v wuhbtool)"
-          test -n "$WUHBTOOL"
-          cp "$WUHBTOOL" ci-artifact/wuhbtool
-          chmod +x ci-artifact/wuhbtool
+          set -euo pipefail
+          python3 tools/package_sd.py build/ArenaAssault.wuhb -o ArenaAssault_Aroma_SD_V11.zip
+          test -s ArenaAssault_Aroma_SD_V11.zip
+          mkdir -p ci-artifact/wiiu/apps/ArenaAssault
+          cp build/ArenaAssault.wuhb ci-artifact/ArenaAssault.wuhb
+          cp build/ArenaAssault.wuhb ci-artifact/wiiu/apps/ArenaAssault/ArenaAssault.wuhb
+          cp ArenaAssault_Aroma_SD_V11.zip ci-artifact/ArenaAssault_Aroma_SD_V11.zip
+          python3 - <<'PY'
+          import zipfile
+          p='ArenaAssault_Aroma_SD_V11.zip'
+          with zipfile.ZipFile(p) as z:
+              assert z.testzip() is None
+              assert 'wiiu/apps/ArenaAssault/ArenaAssault.wuhb' in z.namelist()
+          print('ZIP verification OK')
+          PY
 
-      - name: Upload core build
+      - name: Upload V11 Aroma release
         uses: actions/upload-artifact@v4
         with:
-          name: ArenaAssault-V11-core
+          name: ArenaAssault-V11-Aroma-SD
           path: ci-artifact/
           if-no-files-found: error
