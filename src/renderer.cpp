@@ -508,8 +508,8 @@ void Renderer::flush2D() {
     GX2RUnlockBufferEx(&uiVertexBuffer_, 0);
 
     GX2SetFetchShader(&uiGroup_.fetchShader);
-    GX2SetVertexShader(sceneGroup_.vertexShader);
-    GX2SetPixelShader(sceneGroup_.pixelShader);
+    GX2SetVertexShader(uiGroup_.vertexShader);
+    GX2SetPixelShader(uiGroup_.pixelShader);
     GX2RSetAttributeBuffer(&uiVertexBuffer_, 0, sizeof(Vertex2D), 0);
     GX2DrawEx(GX2_PRIMITIVE_MODE_TRIANGLES,
               static_cast<std::uint32_t>(uiVertices_.size()),0,1);
