@@ -16,6 +16,7 @@
 #include "mesh.hpp"
 #include "render_policy.hpp"
 #include "texture.hpp"
+#include "wiiu_compat.hpp"
 #include "world_asset_layout.hpp"
 
 namespace aa {
