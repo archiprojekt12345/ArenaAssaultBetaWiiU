@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <string>
@@ -15,6 +16,7 @@
 #include "material.hpp"
 #include "mesh.hpp"
 #include "render_policy.hpp"
+#include "skinning.hpp"
 #include "texture.hpp"
 #include "wiiu_compat.hpp"
 #include "world_asset_layout.hpp"
@@ -25,11 +27,21 @@ class Renderer {
 public:
     static constexpr std::uint32_t kMaxVertices3D = 65536;
     static constexpr std::uint32_t kMaxVertices2D = 32768;
+    static constexpr std::size_t kActorCacheSlots = 16;
 
     struct RenderStats {
         std::uint32_t batches3D{};
         std::uint32_t submittedTriangles{};
         std::uint32_t culledMeshes{};
+        std::uint32_t visibleAam2Actors{};
+        std::uint32_t culledAam2Actors{};
+        std::uint32_t lowDetailActors{};
+        std::uint32_t skinnedVertices{};
+        std::uint32_t actorTriangles{};
+        std::uint32_t staticWorldBuilds{};
+        std::uint32_t staticWorldDrawBatches{};
+        std::uint32_t activeParticles{};
+        std::uint32_t particleTriangles{};
     };
 
     bool init(const char* contentRoot);
@@ -38,6 +50,8 @@ public:
     void begin3D(const Camera& camera);
     void submitBox(const Vec3& center, const Vec3& half, float yaw,
                    const Material& material);
+    void submitBillboardQuad(const Vec3& center, float halfSize,
+                             const Material& material);
     void submitMesh(const Mesh& mesh, const Transform& transform,
                     const Material& material);
     void submitSkinnedMesh(const SkinnedMesh& mesh, const SkeletonPose& pose,
@@ -69,36 +83,61 @@ private:
         Color color;
     };
 
+    struct ActorSkinCache {
+        std::vector<SkinnedVertexOutput> localVertices;
+        std::vector<SkinnedVertexOutput> worldVertices;
+        Vec3 lastWorldPosition{};
+        bool valid{};
+    };
+
+    struct StaticWorldRange {
+        std::uint32_t firstVertex{};
+        std::uint32_t vertexCount{};
+        MeshBounds bounds{};
+    };
+
     bool initScenePipeline();
     bool initUIPipeline();
     bool initBuffer(GX2RBuffer& buffer, std::size_t elemSize, std::uint32_t elemCount);
     void destroyShaderGroup(WHBGfxShaderGroup& group);
+    void bindScenePipeline();
     void pushTri3D(const Vertex3D& a, const Vertex3D& b, const Vertex3D& c);
     void flush3DBatch();
     bool meshVisible(const MeshBounds& bounds, const Transform& transform) const;
     Vertex3D makeVertex(const Vec3& position, const Vec3& normal,
                         const Vec2& uv, const Material& material) const;
+    Vertex3D makePreparedVertex(const Vec3& position, const Vec3& normal,
+                                const Vec2& uv, const Material& material) const;
     Vec2 atlasUV(const Vec2& uv, const Material& material) const;
     void uploadSceneUniforms(const Camera& camera);
 
     void loadWorldAssets();
     void clearWorldAssets();
-    void submitWorldAssets();
-    void submitCorridorPortal(const WorldAssetPlacement& placement);
-    void submitSupplyCrate(const WorldAssetPlacement& placement, std::size_t index);
+    bool buildStaticWorldCache();
+    void clearStaticWorldCache();
+    void drawStaticWorld();
 
     WHBGfxShaderGroup sceneGroup_{};
     WHBGfxShaderGroup uiGroup_{};
     GX2RBuffer sceneVertexBuffer_{};
     GX2RBuffer uiVertexBuffer_{};
+    GX2RBuffer staticWorldBuffer_{};
     std::vector<Vertex3D> sceneVertices_;
     std::vector<Vertex2D> uiVertices_;
+    std::vector<StaticWorldRange> staticWorldRanges_;
     TextureAtlas atlas_{};
     std::string contentRoot_{};
 
     Camera currentCamera_{};
+    Vec3 currentCameraForward_{0,0,-1};
+    Vec3 currentCameraRight_{1,0,0};
+    Vec3 currentCameraUp_{0,1,0};
     bool cameraValid_{};
     RenderStats stats_{};
+    std::uint32_t staticWorldBuildCount_{};
+    std::uint64_t frameIndex_{};
+    std::size_t actorSubmitCursor_{};
+    std::array<ActorSkinCache,kActorCacheSlots> actorSkinCache_{};
 
     Mesh corridorLightMesh_{};
     Mesh corridorWhiteMesh_{};
@@ -109,6 +148,7 @@ private:
     Mesh corridorGlassMesh_{};
     Mesh corridorDetailMesh_{};
     Mesh supplyCrateMesh_{};
+    Mesh enemyLowDetailMesh_{};
 
     alignas(256) float sceneUniformBlock_[48]{};
 };
