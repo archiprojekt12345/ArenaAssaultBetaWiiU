@@ -16,6 +16,7 @@
 #include "mesh.hpp"
 #include "render_policy.hpp"
 #include "texture.hpp"
+#include "world_asset_layout.hpp"
 
 namespace aa {
 
@@ -79,6 +80,12 @@ private:
     Vec2 atlasUV(const Vec2& uv, const Material& material) const;
     void uploadSceneUniforms(const Camera& camera);
 
+    void loadWorldAssets();
+    void clearWorldAssets();
+    void submitWorldAssets();
+    void submitCorridorPortal(const WorldAssetPlacement& placement);
+    void submitSupplyCrate(const WorldAssetPlacement& placement, std::size_t index);
+
     WHBGfxShaderGroup sceneGroup_{};
     WHBGfxShaderGroup uiGroup_{};
     GX2RBuffer sceneVertexBuffer_{};
@@ -91,6 +98,16 @@ private:
     Camera currentCamera_{};
     bool cameraValid_{};
     RenderStats stats_{};
+
+    Mesh corridorLightMesh_{};
+    Mesh corridorWhiteMesh_{};
+    Mesh corridorGrayMesh_{};
+    Mesh corridorBlackMesh_{};
+    Mesh corridorBlueMesh_{};
+    Mesh corridorYellowMesh_{};
+    Mesh corridorGlassMesh_{};
+    Mesh corridorDetailMesh_{};
+    Mesh supplyCrateMesh_{};
 
     alignas(256) float sceneUniformBlock_[48]{};
 };
