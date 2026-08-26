@@ -2,13 +2,18 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
-# V11 stores the converted binary models as one compressed repository asset so
-# GitHub can carry them reliably. Expand them into the WUHB content tree before
-# compiling or packaging.
+# The shader compiler does not require world assets. If a complete optional
+# V11 archive is present, expand it for packaging; if the repository copy is
+# truncated, skip it and let the core build continue. The final hardware-test
+# WUHB injects the verified full assets separately.
 ASSET_PACK="$ROOT/tools/v11_assets/v11_meshes.tar.xz"
 if [[ -f "$ASSET_PACK" ]]; then
-  mkdir -p "$ROOT/content/assets/meshes"
-  tar -xJf "$ASSET_PACK" -C "$ROOT/content/assets/meshes"
+  if xz -t "$ASSET_PACK" >/dev/null 2>&1; then
+    mkdir -p "$ROOT/content/assets/meshes"
+    tar -xJf "$ASSET_PACK" -C "$ROOT/content/assets/meshes"
+  else
+    echo "Warning: optional V11 asset archive is truncated; skipping expansion" >&2
+  fi
 fi
 
 COMPILER="${CAFEGLSL_COMPILER:-}"
