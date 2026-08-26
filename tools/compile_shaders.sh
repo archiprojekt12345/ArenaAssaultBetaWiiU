@@ -1,6 +1,26 @@
 #!/usr/bin/env bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+
+# The devkitPPC container intentionally ships only the compiler toolchain.
+# Older CI for this project invokes this script before CMake, so install the
+# Wii U SDK packages here when running under GitHub Actions. This keeps reruns
+# of the existing workflow able to link coreinit/vpad/whb/gx2 without needing
+# another manual workflow dispatch.
+if [[ "${GITHUB_ACTIONS:-}" == "true" ]] && command -v dkp-pacman >/dev/null 2>&1; then
+  for i in 1 2 3; do
+    echo "Syncing devkitPro package databases (attempt $i/3)"
+    if dkp-pacman -Syu --noconfirm; then
+      break
+    fi
+    if [[ "$i" == "3" ]]; then
+      exit 1
+    fi
+    sleep 5
+  done
+  dkp-pacman -S --needed --noconfirm wiiu-dev wut-tools
+fi
+
 COMPILER="${CAFEGLSL_COMPILER:-}"
 if [[ -z "$COMPILER" ]]; then
   for c in glslcompiler.elf glslcompiler shader_compiler; do
