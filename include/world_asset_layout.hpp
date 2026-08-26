@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <cstddef>
 
 #include "math.hpp"
 
@@ -32,5 +33,9 @@ inline constexpr std::array<WorldAssetPlacement, 8> kSupplyCratePlacements{{
     {{-16.4f,0.02f,  1.8f},{1.05f,1.05f,1.05f}, PI*0.5f},
     {{ 16.4f,0.02f, -1.8f},{1.05f,1.05f,1.05f},-PI*0.5f}
 }};
+
+inline constexpr std::size_t staticWorldGroupCount() {
+    return kCorridorPortalPlacements.size() + kSupplyCratePlacements.size();
+}
 
 } // namespace aa
