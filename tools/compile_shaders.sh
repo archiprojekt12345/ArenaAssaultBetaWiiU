@@ -2,23 +2,13 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
-# The devkitPPC container intentionally ships only the compiler toolchain.
-# Older CI for this project invokes this script before CMake, so install the
-# Wii U SDK packages here when running under GitHub Actions. This keeps reruns
-# of the existing workflow able to link coreinit/vpad/whb/gx2 without needing
-# another manual workflow dispatch.
-if [[ "${GITHUB_ACTIONS:-}" == "true" ]] && command -v dkp-pacman >/dev/null 2>&1; then
-  for i in 1 2 3; do
-    echo "Syncing devkitPro package databases (attempt $i/3)"
-    if dkp-pacman -Syu --noconfirm; then
-      break
-    fi
-    if [[ "$i" == "3" ]]; then
-      exit 1
-    fi
-    sleep 5
-  done
-  dkp-pacman -S --needed --noconfirm wiiu-dev wut-tools
+# V11 stores the converted binary models as one compressed repository asset so
+# GitHub can carry them reliably. Expand them into the WUHB content tree before
+# compiling or packaging.
+ASSET_PACK="$ROOT/tools/v11_assets/v11_meshes.tar.xz"
+if [[ -f "$ASSET_PACK" ]]; then
+  mkdir -p "$ROOT/content/assets/meshes"
+  tar -xJf "$ASSET_PACK" -C "$ROOT/content/assets/meshes"
 fi
 
 COMPILER="${CAFEGLSL_COMPILER:-}"
