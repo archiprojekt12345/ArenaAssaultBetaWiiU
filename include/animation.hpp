@@ -76,6 +76,72 @@ inline Vec3 applyBoneNormal(const BonePose& bone, const Vec3& n) {
     return normalize(rotateEulerXYZ(n, bone.rotation));
 }
 
+// Row-major 3x3 rotation plus translation. Building this once per bone moves
+// all sin/cos work out of the weighted-vertex loop.
+struct BoneAffine {
+    Vec3 row0{1,0,0};
+    Vec3 row1{0,1,0};
+    Vec3 row2{0,0,1};
+    Vec3 translation{};
+};
+
+inline BoneAffine makeBoneAffine(const BonePose& bone) {
+    const float sx = std::sin(bone.rotation.x);
+    const float cx = std::cos(bone.rotation.x);
+    const float sy = std::sin(bone.rotation.y);
+    const float cy = std::cos(bone.rotation.y);
+    const float sz = std::sin(bone.rotation.z);
+    const float cz = std::cos(bone.rotation.z);
+
+    BoneAffine a{};
+    a.row0 = {
+        cz*cy,
+        -cz*sy*sx - sz*cx,
+        -cz*sy*cx + sz*sx
+    };
+    a.row1 = {
+        sz*cy,
+        -sz*sy*sx + cz*cx,
+        -sz*sy*cx - cz*sx
+    };
+    a.row2 = {
+        sy,
+        cy*sx,
+        cy*cx
+    };
+
+    const Vec3 rp{
+        dot(a.row0,bone.pivot),
+        dot(a.row1,bone.pivot),
+        dot(a.row2,bone.pivot)
+    };
+    a.translation = bone.pivot + bone.translation - rp;
+    return a;
+}
+
+inline std::array<BoneAffine,kMaxSkinBones> buildBoneAffines(const SkeletonPose& pose) {
+    std::array<BoneAffine,kMaxSkinBones> out{};
+    const std::size_t count = pose.count < kMaxSkinBones ? pose.count : kMaxSkinBones;
+    for (std::size_t i=0;i<count;++i) out[i] = makeBoneAffine(pose.bones[i]);
+    return out;
+}
+
+inline Vec3 applyBonePoint(const BoneAffine& bone, const Vec3& p) {
+    return {
+        dot(bone.row0,p) + bone.translation.x,
+        dot(bone.row1,p) + bone.translation.y,
+        dot(bone.row2,p) + bone.translation.z
+    };
+}
+
+inline Vec3 applyBoneNormal(const BoneAffine& bone, const Vec3& n) {
+    return {
+        dot(bone.row0,n),
+        dot(bone.row1,n),
+        dot(bone.row2,n)
+    };
+}
+
 inline SkeletonPose makeRobotPose(float phase, bool attacking, float hitReaction = 0.0f) {
     SkeletonPose pose{};
     pose.count = kRobotBoneCount;
@@ -113,7 +179,6 @@ inline SkeletonPose makeRobotPose(float phase, bool attacking, float hitReaction
     armR.rotation.x = walk*0.22f;
 
     if (attacking) {
-        // Bring weapon-side arm forward and stabilize the support arm.
         armR.rotation.x = -0.72f + walk*0.04f;
         armR.rotation.z = -0.08f;
         armL.rotation.x = -0.48f + walk2*0.03f;
