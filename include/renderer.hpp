@@ -29,6 +29,11 @@ public:
     static constexpr std::uint32_t kMaxVertices2D = 32768;
     static constexpr std::size_t kActorCacheSlots = 16;
 
+    enum class UITarget {
+        TV,
+        DRC
+    };
+
     struct RenderStats {
         std::uint32_t batches3D{};
         std::uint32_t submittedTriangles{};
@@ -58,6 +63,7 @@ public:
                            const Transform& transform, const Material& material);
     void flush3D();
 
+    void setUITarget(UITarget target) { uiTarget_ = target; }
     void begin2D();
     void tri2D(const Vec4& a, const Vec4& b, const Vec4& c,
                const Color& color);
@@ -120,7 +126,8 @@ private:
     WHBGfxShaderGroup sceneGroup_{};
     WHBGfxShaderGroup uiGroup_{};
     GX2RBuffer sceneVertexBuffer_{};
-    GX2RBuffer uiVertexBuffer_{};
+    GX2RBuffer uiTvVertexBuffer_{};
+    GX2RBuffer uiDrcVertexBuffer_{};
     GX2RBuffer staticWorldBuffer_{};
     std::vector<Vertex3D> sceneVertices_;
     std::vector<Vertex2D> uiVertices_;
@@ -133,6 +140,7 @@ private:
     Vec3 currentCameraRight_{1,0,0};
     Vec3 currentCameraUp_{0,1,0};
     bool cameraValid_{};
+    UITarget uiTarget_{UITarget::TV};
     RenderStats stats_{};
     std::uint32_t staticWorldBuildCount_{};
     std::uint64_t frameIndex_{};
