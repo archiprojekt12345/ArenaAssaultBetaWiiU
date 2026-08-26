@@ -30,6 +30,7 @@ jobs:
           /tmp/world_asset_layout_test
           g++ -std=c++17 -Wall -Wextra -Wpedantic -Iinclude tests/performance_geometry_tests.cpp -o /tmp/performance_geometry_test
           /tmp/performance_geometry_test
+          python3 tests/ui_buffer_isolation_test.py
 
       - name: Validate core assets
         shell: bash
