@@ -80,12 +80,14 @@ int main(int argc, char** argv) {
         WHBGfxBeginRender();
 
         WHBGfxBeginRenderTV();
+        renderer.setUITarget(aa::Renderer::UITarget::TV);
         WHBGfxClearColor(0.025f, 0.035f, 0.055f, 1.0f);
         GX2SetDepthOnlyControl(TRUE, TRUE, GX2_COMPARE_FUNC_LESS);
         game.renderTV(renderer);
         WHBGfxFinishRenderTV();
 
         WHBGfxBeginRenderDRC();
+        renderer.setUITarget(aa::Renderer::UITarget::DRC);
         WHBGfxClearColor(0.015f, 0.025f, 0.035f, 1.0f);
         game.renderMap(renderer);
         WHBGfxFinishRenderDRC();
