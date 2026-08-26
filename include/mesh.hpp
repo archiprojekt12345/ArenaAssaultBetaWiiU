@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "math.hpp"
+#include "mesh_bounds.hpp"
 
 namespace aa {
 
@@ -31,11 +32,13 @@ public:
     const std::vector<MeshVertex>& vertices() const { return vertices_; }
     const std::vector<std::uint32_t>& indices() const { return indices_; }
     const std::string& sourcePath() const { return sourcePath_; }
+    const MeshBounds& bounds() const { return bounds_; }
 
 private:
     std::vector<MeshVertex> vertices_;
     std::vector<std::uint32_t> indices_;
     std::string sourcePath_;
+    MeshBounds bounds_{};
 };
 
 // Arena Assault Mesh v2 (.aam2)
@@ -61,12 +64,14 @@ public:
     const std::vector<SkinnedMeshVertex>& vertices() const { return vertices_; }
     const std::vector<std::uint32_t>& indices() const { return indices_; }
     const std::string& sourcePath() const { return sourcePath_; }
+    const MeshBounds& bounds() const { return bounds_; }
 
 private:
     std::vector<SkinnedMeshVertex> vertices_;
     std::vector<std::uint32_t> indices_;
     std::uint32_t boneCount_{};
     std::string sourcePath_;
+    MeshBounds bounds_{};
 };
 
 } // namespace aa
