@@ -1,0 +1,67 @@
+name: Build V11 Wii U Core
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container: devkitpro/devkitppc:latest
+
+    steps:
+      - name: Checkout V11 branch
+        uses: actions/checkout@v4
+        with:
+          ref: feature/v11-renderer-optimization
+
+      - name: Download CafeGLSL host compiler
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import urllib.request
+          url = 'https://github.com/Exzap/CafeGLSL/releases/download/v0.2.0/glslcompiler.elf'
+          urllib.request.urlretrieve(url, '/tmp/glslcompiler.elf')
+          PY
+          chmod +x /tmp/glslcompiler.elf
+
+      - name: Compile shaders
+        shell: bash
+        run: |
+          CAFEGLSL_COMPILER=/tmp/glslcompiler.elf ./tools/compile_shaders.sh
+          test -s content/shaders/scene3d.gsh
+          test -s content/shaders/ui2d.gsh
+
+      - name: Configure Wii U build
+        shell: bash
+        run: |
+          rm -rf build
+          /opt/devkitpro/portlibs/wiiu/bin/powerpc-eabi-cmake \
+            -S . -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build RPX
+        shell: bash
+        run: |
+          cmake --build build -j2 --target arena_assault
+          test -s build/arena_assault.rpx
+
+      - name: Stage core artifact
+        shell: bash
+        run: |
+          mkdir -p ci-artifact/shaders
+          cp build/arena_assault.rpx ci-artifact/arena_assault.rpx
+          cp content/shaders/scene3d.gsh ci-artifact/shaders/scene3d.gsh
+          cp content/shaders/ui2d.gsh ci-artifact/shaders/ui2d.gsh
+          WUHBTOOL="$(command -v wuhbtool)"
+          test -n "$WUHBTOOL"
+          cp "$WUHBTOOL" ci-artifact/wuhbtool
+          chmod +x ci-artifact/wuhbtool
+
+      - name: Upload core build
+        uses: actions/upload-artifact@v4
+        with:
+          name: ArenaAssault-V11-core
+          path: ci-artifact/
+          if-no-files-found: error
