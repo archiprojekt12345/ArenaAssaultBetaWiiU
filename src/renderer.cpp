@@ -69,7 +69,8 @@ bool Renderer::init(const char* contentRoot) {
     }
 
     if (!initBuffer(sceneVertexBuffer_, sizeof(Vertex3D), kMaxVertices3D) ||
-        !initBuffer(uiVertexBuffer_, sizeof(Vertex2D), kMaxVertices2D)) {
+        !initBuffer(uiTvVertexBuffer_, sizeof(Vertex2D), kMaxVertices2D) ||
+        !initBuffer(uiDrcVertexBuffer_, sizeof(Vertex2D), kMaxVertices2D)) {
         WHBLogPrintf("ArenaAssault: vertex buffer allocation failed");
         shutdown();
         return false;
@@ -104,9 +105,11 @@ bool Renderer::init(const char* contentRoot) {
 void Renderer::shutdown() {
     clearStaticWorldCache();
     if (sceneVertexBuffer_.buffer) GX2RDestroyBufferEx(&sceneVertexBuffer_, 0);
-    if (uiVertexBuffer_.buffer) GX2RDestroyBufferEx(&uiVertexBuffer_, 0);
+    if (uiTvVertexBuffer_.buffer) GX2RDestroyBufferEx(&uiTvVertexBuffer_, 0);
+    if (uiDrcVertexBuffer_.buffer) GX2RDestroyBufferEx(&uiDrcVertexBuffer_, 0);
     sceneVertexBuffer_ = {};
-    uiVertexBuffer_ = {};
+    uiTvVertexBuffer_ = {};
+    uiDrcVertexBuffer_ = {};
 
     sceneVertices_.clear();
     uiVertices_.clear();
@@ -118,6 +121,7 @@ void Renderer::shutdown() {
     actorSubmitCursor_ = 0;
     frameIndex_ = 0;
     cameraValid_ = false;
+    uiTarget_ = UITarget::TV;
     stats_ = {};
 
     clearWorldAssets();
@@ -676,15 +680,18 @@ void Renderer::rect2D(float x0, float y0, float x1, float y1,
 void Renderer::flush2D() {
     if (uiVertices_.empty()) return;
     GX2SetDepthOnlyControl(FALSE, FALSE, GX2_COMPARE_FUNC_ALWAYS);
-    void* dst = GX2RLockBufferEx(&uiVertexBuffer_, 0);
+
+    GX2RBuffer& uiBuffer =
+        (uiTarget_ == UITarget::TV) ? uiTvVertexBuffer_ : uiDrcVertexBuffer_;
+    void* dst = GX2RLockBufferEx(&uiBuffer, 0);
     if (!dst) return;
     std::memcpy(dst, uiVertices_.data(), uiVertices_.size()*sizeof(Vertex2D));
-    GX2RUnlockBufferEx(&uiVertexBuffer_, 0);
+    GX2RUnlockBufferEx(&uiBuffer, 0);
 
     GX2SetFetchShader(&uiGroup_.fetchShader);
     GX2SetVertexShader(uiGroup_.vertexShader);
     GX2SetPixelShader(uiGroup_.pixelShader);
-    GX2RSetAttributeBuffer(&uiVertexBuffer_, 0, sizeof(Vertex2D), 0);
+    GX2RSetAttributeBuffer(&uiBuffer, 0, sizeof(Vertex2D), 0);
     GX2DrawEx(GX2_PRIMITIVE_MODE_TRIANGLES,
               static_cast<std::uint32_t>(uiVertices_.size()),0,1);
 }
