@@ -5,6 +5,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -82,15 +83,26 @@ bool Renderer::init(const char* contentRoot) {
     }
 
     loadWorldAssets();
+    if (!buildStaticWorldCache()) {
+        WHBLogPrintf("ArenaAssault: static V11 world cache unavailable; world props disabled");
+        clearStaticWorldCache();
+    }
 
     sceneVertices_.reserve(kMaxVertices3D);
     uiVertices_.reserve(kMaxVertices2D);
-    WHBLogPrintf("ArenaAssault: atlas=%s",
-                 atlas_.loadedExternal() ? "external TGA" : "1x1 fallback");
+    for (auto& cache : actorSkinCache_) {
+        cache.localVertices.reserve(4096);
+        cache.worldVertices.reserve(4096);
+    }
+
+    WHBLogPrintf("ArenaAssault: atlas=%s staticGroups=%u",
+                 atlas_.loadedExternal() ? "external TGA" : "1x1 fallback",
+                 static_cast<unsigned>(staticWorldRanges_.size()));
     return true;
 }
 
 void Renderer::shutdown() {
+    clearStaticWorldCache();
     if (sceneVertexBuffer_.buffer) GX2RDestroyBufferEx(&sceneVertexBuffer_, 0);
     if (uiVertexBuffer_.buffer) GX2RDestroyBufferEx(&uiVertexBuffer_, 0);
     sceneVertexBuffer_ = {};
@@ -98,6 +110,13 @@ void Renderer::shutdown() {
 
     sceneVertices_.clear();
     uiVertices_.clear();
+    for (auto& cache : actorSkinCache_) {
+        cache.localVertices.clear();
+        cache.worldVertices.clear();
+        cache.valid = false;
+    }
+    actorSubmitCursor_ = 0;
+    frameIndex_ = 0;
     cameraValid_ = false;
     stats_ = {};
 
@@ -126,6 +145,7 @@ void Renderer::loadWorldAssets() {
     load(corridorGlassMesh_,  "assets/meshes/corridor_glass.aam",  "corridor glass");
     load(corridorDetailMesh_, "assets/meshes/corridor_detail.aam", "corridor details");
     load(supplyCrateMesh_,    "assets/meshes/supply_crate.aam",    "supply crate");
+    load(enemyLowDetailMesh_, "assets/meshes/enemy_body.aam",      "enemy low-detail fallback");
 }
 
 void Renderer::clearWorldAssets() {
@@ -138,11 +158,10 @@ void Renderer::clearWorldAssets() {
     corridorGlassMesh_.clear();
     corridorDetailMesh_.clear();
     supplyCrateMesh_.clear();
+    enemyLowDetailMesh_.clear();
 }
 
 bool Renderer::initScenePipeline() {
-    // WUHB content is mounted read-only at /vol/content. The shaders are
-    // compiled offline to GFD/GSH so the end user needs no CafeGLSL RPL.
     const char* root = contentRoot_.c_str();
     const std::string path = pathJoin(root, "shaders/scene3d.gsh");
     if (!loadGshGroup(sceneGroup_, path.c_str())) return false;
@@ -198,97 +217,33 @@ void Renderer::destroyShaderGroup(WHBGfxShaderGroup& group) {
     group = {};
 }
 
-void Renderer::begin3D(const Camera& camera) {
-    sceneVertices_.clear();
-    currentCamera_ = camera;
-    cameraValid_ = true;
-    stats_ = {};
-    uploadSceneUniforms(camera);
-    submitWorldAssets();
-}
+void Renderer::bindScenePipeline() {
+    GX2SetShaderMode(GX2_SHADER_MODE_UNIFORM_BLOCK);
+    GX2SetFetchShader(&sceneGroup_.fetchShader);
+    GX2SetVertexShader(sceneGroup_.vertexShader);
+    GX2SetPixelShader(sceneGroup_.pixelShader);
+    GX2SetVertexUniformBlock(0, sizeof(sceneUniformBlock_), sceneUniformBlock_);
+    GX2SetPixelUniformBlock(0, sizeof(sceneUniformBlock_), sceneUniformBlock_);
 
-void Renderer::submitWorldAssets() {
-    for (const auto& p : kCorridorPortalPlacements) submitCorridorPortal(p);
-    for (std::size_t i=0; i<kSupplyCratePlacements.size(); ++i)
-        submitSupplyCrate(kSupplyCratePlacements[i], i);
-}
-
-void Renderer::submitCorridorPortal(const WorldAssetPlacement& placement) {
-    Transform t{};
-    t.position = placement.position;
-    t.scale = placement.scale;
-    t.yaw = placement.yaw;
-
-    Material white = materials::wall({0.48f,0.52f,0.56f,1.0f});
-    Material gray = materials::wall({0.24f,0.28f,0.32f,1.0f});
-    Material black = materials::darkMetal();
-    Material yellow = materials::wall({0.72f,0.48f,0.08f,1.0f});
-    Material glass = materials::wall({0.08f,0.18f,0.22f,1.0f});
-    Material detail = materials::darkMetal();
-    Material warmLight = materials::emissive({0.72f,0.86f,1.00f,1.0f},2.2f);
-    Material blueLight = materials::emissive({0.04f,0.58f,0.98f,1.0f},3.0f);
-
-    white.textureMix = 0.0f;
-    gray.textureMix = 0.0f;
-    black.textureMix = 0.0f;
-    yellow.textureMix = 0.0f;
-    glass.textureMix = 0.0f;
-    detail.textureMix = 0.0f;
-    warmLight.textureMix = 0.0f;
-    blueLight.textureMix = 0.0f;
-
-    submitMesh(corridorGrayMesh_, t, gray);
-    submitMesh(corridorBlackMesh_, t, black);
-    submitMesh(corridorWhiteMesh_, t, white);
-    submitMesh(corridorYellowMesh_, t, yellow);
-    submitMesh(corridorGlassMesh_, t, glass);
-    submitMesh(corridorDetailMesh_, t, detail);
-    submitMesh(corridorLightMesh_, t, warmLight);
-    submitMesh(corridorBlueMesh_, t, blueLight);
-
-    // Hazard-strip threshold at each portal entrance. Geometry stays cheap and
-    // the alternating yellow/black blocks read clearly even without source textures.
-    Material hazardYellow = materials::emissive({0.92f,0.58f,0.04f,1.0f},0.55f);
-    hazardYellow.diffuse = {0.38f,0.24f,0.03f,1.0f};
-    hazardYellow.textureMix = 0.0f;
-    Material hazardBlack = materials::darkMetal();
-    hazardBlack.diffuse = {0.025f,0.03f,0.035f,1.0f};
-    hazardBlack.textureMix = 0.0f;
-
-    for (int i=-4; i<=4; ++i) {
-        const Vec3 local{float(i)*0.62f,0.035f,1.34f};
-        const Vec3 world = placement.position + rotateY(local, placement.yaw);
-        submitBox(world,{0.27f,0.025f,0.11f},placement.yaw,
-                  (i & 1) ? hazardBlack : hazardYellow);
+    if (atlas_.texture() && sceneGroup_.pixelShader->samplerVarCount > 0) {
+        const std::uint32_t loc = sceneGroup_.pixelShader->samplerVars[0].location;
+        GX2SetPixelTexture(atlas_.texture(), loc);
+        GX2SetPixelSampler(atlas_.sampler(), loc);
     }
 }
 
-void Renderer::submitSupplyCrate(const WorldAssetPlacement& placement, std::size_t index) {
-    Transform t{};
-    t.position = placement.position;
-    t.scale = placement.scale;
-    t.yaw = placement.yaw;
-
-    Material crate = materials::darkMetal();
-    crate.diffuse = {0.15f,0.18f,0.20f,1.0f};
-    crate.textureMix = 0.0f;
-    submitMesh(supplyCrateMesh_, t, crate);
-
-    Color panelColor{0.04f,0.65f,0.96f,1.0f};
-    if ((index % 3) == 1) panelColor = {0.92f,0.58f,0.06f,1.0f};
-    if ((index % 3) == 2) panelColor = {0.08f,0.90f,0.42f,1.0f};
-    Material panel = materials::emissive(panelColor,2.1f);
-    panel.textureMix = 0.0f;
-
-    const Vec3 localPanel{
-        0.0f,
-        0.36f*placement.scale.y,
-       -0.505f*placement.scale.z
-    };
-    const Vec3 panelPos = placement.position + rotateY(localPanel,placement.yaw);
-    submitBox(panelPos,
-              {0.22f*placement.scale.x,0.075f*placement.scale.y,0.025f*placement.scale.z},
-              placement.yaw,panel);
+void Renderer::begin3D(const Camera& camera) {
+    sceneVertices_.clear();
+    currentCamera_ = camera;
+    currentCameraForward_ = cameraForward(camera);
+    currentCameraRight_ = cameraRight(camera);
+    currentCameraUp_ = cameraUp(camera);
+    cameraValid_ = true;
+    actorSubmitCursor_ = 0;
+    stats_ = {};
+    stats_.staticWorldBuilds = staticWorldBuildCount_;
+    uploadSceneUniforms(camera);
+    drawStaticWorld();
 }
 
 Vec2 Renderer::atlasUV(const Vec2& uv, const Material& material) const {
@@ -301,15 +256,199 @@ Vec2 Renderer::atlasUV(const Vec2& uv, const Material& material) const {
 Renderer::Vertex3D Renderer::makeVertex(const Vec3& position, const Vec3& normal,
                                         const Vec2& uv,
                                         const Material& material) const {
+    return makePreparedVertex(position,normalize(normal),uv,material);
+}
+
+Renderer::Vertex3D Renderer::makePreparedVertex(const Vec3& position, const Vec3& normal,
+                                                const Vec2& uv,
+                                                const Material& material) const {
     return {
         position,
-        normalize(normal),
+        normal,
         atlasUV(uv, material),
         material.diffuse,
         material.emissive,
         {material.specular, material.roughness,
          material.textureMix, material.emissiveStrength}
     };
+}
+
+bool Renderer::buildStaticWorldCache() {
+    clearStaticWorldCache();
+
+    std::vector<Vertex3D> vertices;
+    vertices.reserve(160000);
+    staticWorldRanges_.reserve(staticWorldGroupCount());
+
+    auto appendMesh = [&](const Mesh& mesh, const Transform& transform,
+                          const Material& material, BoundsAccumulator& bounds) {
+        if (!mesh.valid()) return;
+        const auto& src = mesh.vertices();
+        const auto& indices = mesh.indices();
+        for (std::uint32_t index : indices) {
+            const MeshVertex& v = src[index];
+            const Vec3 p = transformPoint(transform,v.position);
+            const Vec3 n = transformNormal(transform,v.normal);
+            vertices.push_back(makePreparedVertex(p,n,v.uv,material));
+            bounds.add(p);
+        }
+    };
+
+    auto appendBox = [&](const Vec3& center, const Vec3& half, float yaw,
+                         const Material& material, BoundsAccumulator& bounds) {
+        const Vec3 local[8] = {
+            {-half.x,-half.y,-half.z}, { half.x,-half.y,-half.z},
+            { half.x, half.y,-half.z}, {-half.x, half.y,-half.z},
+            {-half.x,-half.y, half.z}, { half.x,-half.y, half.z},
+            { half.x, half.y, half.z}, {-half.x, half.y, half.z}
+        };
+        const int faces[6][4] = {
+            {0,1,2,3}, {5,4,7,6}, {4,0,3,7},
+            {1,5,6,2}, {3,2,6,7}, {4,5,1,0}
+        };
+        const Vec3 normals[6] = {
+            {0,0,-1}, {0,0,1}, {-1,0,0},
+            {1,0,0}, {0,1,0}, {0,-1,0}
+        };
+        const Vec2 uv[4] = {{0,0},{1,0},{1,1},{0,1}};
+        Vec3 world[8];
+        for (int i=0;i<8;++i) {
+            world[i] = center + rotateY(local[i],yaw);
+            bounds.add(world[i]);
+        }
+        for (int f=0;f<6;++f) {
+            const Vec3 n = rotateY(normals[f],yaw);
+            const int a=faces[f][0], b=faces[f][1], c=faces[f][2], d=faces[f][3];
+            const Vertex3D va=makePreparedVertex(world[a],n,uv[0],material);
+            const Vertex3D vb=makePreparedVertex(world[b],n,uv[1],material);
+            const Vertex3D vc=makePreparedVertex(world[c],n,uv[2],material);
+            const Vertex3D vd=makePreparedVertex(world[d],n,uv[3],material);
+            vertices.push_back(va); vertices.push_back(vb); vertices.push_back(vc);
+            vertices.push_back(va); vertices.push_back(vc); vertices.push_back(vd);
+        }
+    };
+
+    auto finishGroup = [&](std::size_t first, const BoundsAccumulator& bounds) {
+        if (vertices.size() <= first) return;
+        const std::size_t count = vertices.size() - first;
+        if (first > std::numeric_limits<std::uint32_t>::max() ||
+            count > std::numeric_limits<std::uint32_t>::max()) return;
+        staticWorldRanges_.push_back({
+            static_cast<std::uint32_t>(first),
+            static_cast<std::uint32_t>(count),
+            bounds.finish()
+        });
+    };
+
+    for (const auto& placement : kCorridorPortalPlacements) {
+        const std::size_t first = vertices.size();
+        BoundsAccumulator bounds;
+        Transform t{};
+        t.position = placement.position;
+        t.scale = placement.scale;
+        t.yaw = placement.yaw;
+
+        Material white = materials::wall({0.48f,0.52f,0.56f,1.0f});
+        Material gray = materials::wall({0.24f,0.28f,0.32f,1.0f});
+        Material black = materials::darkMetal();
+        Material yellow = materials::wall({0.72f,0.48f,0.08f,1.0f});
+        Material glass = materials::wall({0.08f,0.18f,0.22f,1.0f});
+        Material detail = materials::darkMetal();
+        Material warmLight = materials::emissive({0.72f,0.86f,1.00f,1.0f},2.2f);
+        Material blueLight = materials::emissive({0.04f,0.58f,0.98f,1.0f},3.0f);
+        white.textureMix=gray.textureMix=black.textureMix=yellow.textureMix=0.0f;
+        glass.textureMix=detail.textureMix=warmLight.textureMix=blueLight.textureMix=0.0f;
+
+        appendMesh(corridorGrayMesh_,t,gray,bounds);
+        appendMesh(corridorBlackMesh_,t,black,bounds);
+        appendMesh(corridorWhiteMesh_,t,white,bounds);
+        appendMesh(corridorYellowMesh_,t,yellow,bounds);
+        appendMesh(corridorGlassMesh_,t,glass,bounds);
+        appendMesh(corridorDetailMesh_,t,detail,bounds);
+        appendMesh(corridorLightMesh_,t,warmLight,bounds);
+        appendMesh(corridorBlueMesh_,t,blueLight,bounds);
+
+        Material hazardYellow = materials::emissive({0.92f,0.58f,0.04f,1.0f},0.55f);
+        hazardYellow.diffuse = {0.38f,0.24f,0.03f,1.0f};
+        hazardYellow.textureMix = 0.0f;
+        Material hazardBlack = materials::darkMetal();
+        hazardBlack.diffuse = {0.025f,0.03f,0.035f,1.0f};
+        hazardBlack.textureMix = 0.0f;
+        for (int i=-4;i<=4;++i) {
+            const Vec3 local{float(i)*0.62f,0.035f,1.34f};
+            const Vec3 world = placement.position + rotateY(local,placement.yaw);
+            appendBox(world,{0.27f,0.025f,0.11f},placement.yaw,
+                      (i&1)?hazardBlack:hazardYellow,bounds);
+        }
+        finishGroup(first,bounds);
+    }
+
+    for (std::size_t i=0;i<kSupplyCratePlacements.size();++i) {
+        const auto& placement = kSupplyCratePlacements[i];
+        const std::size_t first = vertices.size();
+        BoundsAccumulator bounds;
+        Transform t{};
+        t.position=placement.position;
+        t.scale=placement.scale;
+        t.yaw=placement.yaw;
+
+        Material crate=materials::darkMetal();
+        crate.diffuse={0.15f,0.18f,0.20f,1.0f};
+        crate.textureMix=0.0f;
+        appendMesh(supplyCrateMesh_,t,crate,bounds);
+
+        Color panelColor{0.04f,0.65f,0.96f,1.0f};
+        if ((i%3)==1) panelColor={0.92f,0.58f,0.06f,1.0f};
+        if ((i%3)==2) panelColor={0.08f,0.90f,0.42f,1.0f};
+        Material panel=materials::emissive(panelColor,2.1f);
+        panel.textureMix=0.0f;
+        const Vec3 localPanel{0.0f,0.36f*placement.scale.y,-0.505f*placement.scale.z};
+        const Vec3 panelPos=placement.position+rotateY(localPanel,placement.yaw);
+        appendBox(panelPos,
+                  {0.22f*placement.scale.x,0.075f*placement.scale.y,0.025f*placement.scale.z},
+                  placement.yaw,panel,bounds);
+        finishGroup(first,bounds);
+    }
+
+    if (vertices.empty()) return true;
+    if (vertices.size() > std::numeric_limits<std::uint32_t>::max()) return false;
+    if (!initBuffer(staticWorldBuffer_,sizeof(Vertex3D),
+                    static_cast<std::uint32_t>(vertices.size()))) return false;
+
+    void* dst=GX2RLockBufferEx(&staticWorldBuffer_,0);
+    if (!dst) {
+        clearStaticWorldCache();
+        return false;
+    }
+    std::memcpy(dst,vertices.data(),vertices.size()*sizeof(Vertex3D));
+    GX2RUnlockBufferEx(&staticWorldBuffer_,0);
+    ++staticWorldBuildCount_;
+
+    WHBLogPrintf("ArenaAssault: static world cached vertices=%u groups=%u",
+                 static_cast<unsigned>(vertices.size()),
+                 static_cast<unsigned>(staticWorldRanges_.size()));
+    return true;
+}
+
+void Renderer::clearStaticWorldCache() {
+    if (staticWorldBuffer_.buffer) GX2RDestroyBufferEx(&staticWorldBuffer_,0);
+    staticWorldBuffer_={};
+    staticWorldRanges_.clear();
+}
+
+void Renderer::drawStaticWorld() {
+    if (!staticWorldBuffer_.buffer || staticWorldRanges_.empty()) return;
+    bindScenePipeline();
+    for (const auto& range : staticWorldRanges_) {
+        if (cameraValid_ && range.bounds.valid &&
+            !sphereVisible(currentCamera_,range.bounds.center,range.bounds.radius)) {
+            continue;
+        }
+        GX2RSetAttributeBuffer(&staticWorldBuffer_,0,sizeof(Vertex3D),
+                               range.firstVertex*sizeof(Vertex3D));
+        GX2DrawEx(GX2_PRIMITIVE_MODE_TRIANGLES,range.vertexCount,0,1);
+        ++stats_.staticWorldDrawBatches;
+    }
 }
 
 bool Renderer::meshVisible(const MeshBounds& bounds, const Transform& transform) const {
@@ -361,13 +500,33 @@ void Renderer::submitBox(const Vec3& center, const Vec3& half, float yaw,
     for (int f=0;f<6;++f) {
         const Vec3 n = rotateY(normals[f], yaw);
         const int a=faces[f][0], b=faces[f][1], c=faces[f][2], d=faces[f][3];
-        const Vertex3D va=makeVertex(world[a],n,uv[0],material);
-        const Vertex3D vb=makeVertex(world[b],n,uv[1],material);
-        const Vertex3D vc=makeVertex(world[c],n,uv[2],material);
-        const Vertex3D vd=makeVertex(world[d],n,uv[3],material);
+        const Vertex3D va=makePreparedVertex(world[a],n,uv[0],material);
+        const Vertex3D vb=makePreparedVertex(world[b],n,uv[1],material);
+        const Vertex3D vc=makePreparedVertex(world[c],n,uv[2],material);
+        const Vertex3D vd=makePreparedVertex(world[d],n,uv[3],material);
         pushTri3D(va,vb,vc);
         pushTri3D(va,vc,vd);
     }
+}
+
+void Renderer::submitBillboardQuad(const Vec3& center, float halfSize,
+                                   const Material& material) {
+    halfSize=std::max(0.0001f,halfSize);
+    const Vec3 right=currentCameraRight_*halfSize;
+    const Vec3 up=currentCameraUp_*halfSize;
+    const Vec3 n=currentCameraForward_*-1.0f;
+    const Vec3 a=center-right-up;
+    const Vec3 b=center+right-up;
+    const Vec3 c=center+right+up;
+    const Vec3 d=center-right+up;
+    const Vertex3D va=makePreparedVertex(a,n,{0,1},material);
+    const Vertex3D vb=makePreparedVertex(b,n,{1,1},material);
+    const Vertex3D vc=makePreparedVertex(c,n,{1,0},material);
+    const Vertex3D vd=makePreparedVertex(d,n,{0,0},material);
+    pushTri3D(va,vb,vc);
+    pushTri3D(va,vc,vd);
+    ++stats_.activeParticles;
+    stats_.particleTriangles+=2;
 }
 
 void Renderer::submitMesh(const Mesh& mesh, const Transform& transform,
@@ -385,9 +544,9 @@ void Renderer::submitMesh(const Mesh& mesh, const Transform& transform,
         const MeshVertex& b = vertices[indices[i+1]];
         const MeshVertex& c = vertices[indices[i+2]];
         pushTri3D(
-            makeVertex(transformPoint(transform,a.position), transformNormal(transform,a.normal), a.uv, material),
-            makeVertex(transformPoint(transform,b.position), transformNormal(transform,b.normal), b.uv, material),
-            makeVertex(transformPoint(transform,c.position), transformNormal(transform,c.normal), c.uv, material)
+            makePreparedVertex(transformPoint(transform,a.position), transformNormal(transform,a.normal), a.uv, material),
+            makePreparedVertex(transformPoint(transform,b.position), transformNormal(transform,b.normal), b.uv, material),
+            makePreparedVertex(transformPoint(transform,c.position), transformNormal(transform,c.normal), c.uv, material)
         );
     }
 }
@@ -396,52 +555,79 @@ void Renderer::submitSkinnedMesh(const SkinnedMesh& mesh, const SkeletonPose& po
                                  const Transform& transform, const Material& material) {
     if (!mesh.valid() || pose.count == 0) return;
 
-    MeshBounds animatedBounds = mesh.bounds();
-    animatedBounds.radius *= 1.20f;
-    if (!meshVisible(animatedBounds, transform)) {
+    const std::size_t slot=actorSubmitCursor_++ % kActorCacheSlots;
+    MeshBounds animatedBounds=mesh.bounds();
+    animatedBounds.radius*=1.20f;
+
+    const float maxScale=std::max({
+        std::fabs(transform.scale.x),std::fabs(transform.scale.y),std::fabs(transform.scale.z)
+    });
+    const Vec3 worldCenter=transformPoint(transform,animatedBounds.center);
+    const float worldRadius=animatedBounds.radius*maxScale;
+    const bool visible=!cameraValid_ || sphereVisible(currentCamera_,worldCenter,worldRadius);
+    const float distance=cameraValid_ ? length(worldCenter-currentCamera_.pos) : 0.0f;
+    const EnemyRenderTier tier=selectEnemyRenderTier(distance,visible);
+
+    if (tier==EnemyRenderTier::Culled) {
         ++stats_.culledMeshes;
+        ++stats_.culledAam2Actors;
+        return;
+    }
+    if (tier==EnemyRenderTier::Low) {
+        ++stats_.lowDetailActors;
+        if (enemyLowDetailMesh_.valid()) submitMesh(enemyLowDetailMesh_,transform,material);
         return;
     }
 
-    const auto& vertices = mesh.vertices();
-    const auto& indices = mesh.indices();
+    ++stats_.visibleAam2Actors;
+    ActorSkinCache& cache=actorSkinCache_[slot];
+    const bool cacheShapeMismatch=cache.localVertices.size()!=mesh.vertices().size();
+    const bool actorChanged=!cache.valid ||
+                            lengthSq(transform.position-cache.lastWorldPosition)>4.0f;
+    const bool refresh=tier==EnemyRenderTier::High || cacheShapeMismatch || actorChanged ||
+                       shouldRefreshMediumPose(frameIndex_,slot);
 
-    auto skin = [&](const SkinnedMeshVertex& v, Vec3& outP, Vec3& outN) {
-        Vec3 p{};
-        Vec3 n{};
-        float total = 0.0f;
-        for (int k=0;k<4;++k) {
-            const float w = v.weight[k];
-            if (w <= 0.00001f) continue;
-            const std::size_t bi = static_cast<std::size_t>(v.bone[k]);
-            if (bi >= pose.count || bi >= pose.bones.size()) continue;
-            p += applyBonePoint(pose.bones[bi], v.position) * w;
-            n += applyBoneNormal(pose.bones[bi], v.normal) * w;
-            total += w;
-        }
-        if (total <= 0.00001f) {
-            p = v.position;
-            n = v.normal;
-        } else if (std::fabs(total - 1.0f) > 0.0001f) {
-            p = p / total;
-            n = n / total;
-        }
-        outP = transformPoint(transform, p);
-        outN = transformNormal(transform, normalize(n));
-    };
+    if (refresh) {
+        const SkinningStats skinStats=skinUniqueVertices(mesh.vertices(),pose,cache.localVertices);
+        stats_.skinnedVertices+=static_cast<std::uint32_t>(skinStats.evaluatedVertices);
+        cache.valid=true;
+        cache.lastWorldPosition=transform.position;
+    }
 
+    cache.worldVertices.resize(cache.localVertices.size());
+    const float cy=std::cos(transform.yaw);
+    const float sy=std::sin(transform.yaw);
+    const float invX=std::fabs(transform.scale.x)>0.00001f ? 1.0f/transform.scale.x : 1.0f;
+    const float invY=std::fabs(transform.scale.y)>0.00001f ? 1.0f/transform.scale.y : 1.0f;
+    const float invZ=std::fabs(transform.scale.z)>0.00001f ? 1.0f/transform.scale.z : 1.0f;
+
+    for (std::size_t i=0;i<cache.localVertices.size();++i) {
+        const SkinnedVertexOutput& local=cache.localVertices[i];
+        const float sx=local.position.x*transform.scale.x;
+        const float py=local.position.y*transform.scale.y;
+        const float sz=local.position.z*transform.scale.z;
+        const Vec3 p{
+            transform.position.x + sx*cy - sz*sy,
+            transform.position.y + py,
+            transform.position.z + sx*sy + sz*cy
+        };
+        const Vec3 ns{local.normal.x*invX,local.normal.y*invY,local.normal.z*invZ};
+        const Vec3 n=normalize({ns.x*cy-ns.z*sy,ns.y,ns.x*sy+ns.z*cy});
+        cache.worldVertices[i]={p,n,local.uv};
+    }
+
+    const auto& indices=mesh.indices();
     for (std::size_t i=0;i+2<indices.size();i+=3) {
-        const SkinnedMeshVertex& a = vertices[indices[i+0]];
-        const SkinnedMeshVertex& b = vertices[indices[i+1]];
-        const SkinnedMeshVertex& c = vertices[indices[i+2]];
-        Vec3 pa,na,pb,nb,pc,nc;
-        skin(a,pa,na); skin(b,pb,nb); skin(c,pc,nc);
+        const auto& a=cache.worldVertices[indices[i+0]];
+        const auto& b=cache.worldVertices[indices[i+1]];
+        const auto& c=cache.worldVertices[indices[i+2]];
         pushTri3D(
-            makeVertex(pa,na,a.uv,material),
-            makeVertex(pb,nb,b.uv,material),
-            makeVertex(pc,nc,c.uv,material)
+            makePreparedVertex(a.position,a.normal,a.uv,material),
+            makePreparedVertex(b.position,b.normal,b.uv,material),
+            makePreparedVertex(c.position,c.normal,c.uv,material)
         );
     }
+    stats_.actorTriangles+=static_cast<std::uint32_t>(indices.size()/3);
 }
 
 void Renderer::flush3DBatch() {
@@ -455,19 +641,7 @@ void Renderer::flush3DBatch() {
     std::memcpy(dst, sceneVertices_.data(), sceneVertices_.size()*sizeof(Vertex3D));
     GX2RUnlockBufferEx(&sceneVertexBuffer_, 0);
 
-    GX2SetShaderMode(GX2_SHADER_MODE_UNIFORM_BLOCK);
-    GX2SetFetchShader(&sceneGroup_.fetchShader);
-    GX2SetVertexShader(sceneGroup_.vertexShader);
-    GX2SetPixelShader(sceneGroup_.pixelShader);
-    GX2SetVertexUniformBlock(0, sizeof(sceneUniformBlock_), sceneUniformBlock_);
-    GX2SetPixelUniformBlock(0, sizeof(sceneUniformBlock_), sceneUniformBlock_);
-
-    if (atlas_.texture() && sceneGroup_.pixelShader->samplerVarCount > 0) {
-        const std::uint32_t loc = sceneGroup_.pixelShader->samplerVars[0].location;
-        GX2SetPixelTexture(atlas_.texture(), loc);
-        GX2SetPixelSampler(atlas_.sampler(), loc);
-    }
-
+    bindScenePipeline();
     GX2RSetAttributeBuffer(&sceneVertexBuffer_, 0, sizeof(Vertex3D), 0);
     GX2DrawEx(GX2_PRIMITIVE_MODE_TRIANGLES,
               static_cast<std::uint32_t>(sceneVertices_.size()),0,1);
@@ -477,6 +651,7 @@ void Renderer::flush3DBatch() {
 
 void Renderer::flush3D() {
     flush3DBatch();
+    ++frameIndex_;
 }
 
 void Renderer::begin2D() {
@@ -500,7 +675,6 @@ void Renderer::rect2D(float x0, float y0, float x1, float y1,
 
 void Renderer::flush2D() {
     if (uiVertices_.empty()) return;
-    // HUD/tactical map must not be clipped by the 3D depth buffer.
     GX2SetDepthOnlyControl(FALSE, FALSE, GX2_COMPARE_FUNC_ALWAYS);
     void* dst = GX2RLockBufferEx(&uiVertexBuffer_, 0);
     if (!dst) return;
