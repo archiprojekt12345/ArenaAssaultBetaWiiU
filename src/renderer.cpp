@@ -15,7 +15,6 @@
 #include <gx2r/draw.h>
 #include <whb/log.h>
 
-
 namespace aa {
 namespace {
 
@@ -82,6 +81,8 @@ bool Renderer::init(const char* contentRoot) {
         return false;
     }
 
+    loadWorldAssets();
+
     sceneVertices_.reserve(kMaxVertices3D);
     uiVertices_.reserve(kMaxVertices2D);
     WHBLogPrintf("ArenaAssault: atlas=%s",
@@ -95,13 +96,52 @@ void Renderer::shutdown() {
     sceneVertexBuffer_ = {};
     uiVertexBuffer_ = {};
 
+    sceneVertices_.clear();
+    uiVertices_.clear();
+    cameraValid_ = false;
+    stats_ = {};
+
+    clearWorldAssets();
     atlas_.shutdown();
     destroyShaderGroup(sceneGroup_);
     destroyShaderGroup(uiGroup_);
 }
 
+void Renderer::loadWorldAssets() {
+    auto load = [&](Mesh& mesh, const char* rel, const char* label) {
+        const std::string path = pathJoin(contentRoot_.c_str(), rel);
+        if (mesh.loadFromFile(path.c_str())) {
+            WHBLogPrintf("ArenaAssault: loaded V11 asset %s", label);
+        } else {
+            WHBLogPrintf("ArenaAssault: optional V11 asset missing: %s", rel);
+        }
+    };
+
+    load(corridorLightMesh_,  "assets/meshes/corridor_light.aam",  "corridor light");
+    load(corridorWhiteMesh_,  "assets/meshes/corridor_white.aam",  "corridor white metal");
+    load(corridorGrayMesh_,   "assets/meshes/corridor_gray.aam",   "corridor gray metal");
+    load(corridorBlackMesh_,  "assets/meshes/corridor_black.aam",  "corridor black metal");
+    load(corridorBlueMesh_,   "assets/meshes/corridor_blue.aam",   "corridor blue lamps");
+    load(corridorYellowMesh_, "assets/meshes/corridor_yellow.aam", "corridor yellow structure");
+    load(corridorGlassMesh_,  "assets/meshes/corridor_glass.aam",  "corridor glass");
+    load(corridorDetailMesh_, "assets/meshes/corridor_detail.aam", "corridor details");
+    load(supplyCrateMesh_,    "assets/meshes/supply_crate.aam",    "supply crate");
+}
+
+void Renderer::clearWorldAssets() {
+    corridorLightMesh_.clear();
+    corridorWhiteMesh_.clear();
+    corridorGrayMesh_.clear();
+    corridorBlackMesh_.clear();
+    corridorBlueMesh_.clear();
+    corridorYellowMesh_.clear();
+    corridorGlassMesh_.clear();
+    corridorDetailMesh_.clear();
+    supplyCrateMesh_.clear();
+}
+
 bool Renderer::initScenePipeline() {
-    // WUHB content is mounted read-only at /vol/content.  The shaders are
+    // WUHB content is mounted read-only at /vol/content. The shaders are
     // compiled offline to GFD/GSH so the end user needs no CafeGLSL RPL.
     const char* root = contentRoot_.c_str();
     const std::string path = pathJoin(root, "shaders/scene3d.gsh");
@@ -160,7 +200,95 @@ void Renderer::destroyShaderGroup(WHBGfxShaderGroup& group) {
 
 void Renderer::begin3D(const Camera& camera) {
     sceneVertices_.clear();
+    currentCamera_ = camera;
+    cameraValid_ = true;
+    stats_ = {};
     uploadSceneUniforms(camera);
+    submitWorldAssets();
+}
+
+void Renderer::submitWorldAssets() {
+    for (const auto& p : kCorridorPortalPlacements) submitCorridorPortal(p);
+    for (std::size_t i=0; i<kSupplyCratePlacements.size(); ++i)
+        submitSupplyCrate(kSupplyCratePlacements[i], i);
+}
+
+void Renderer::submitCorridorPortal(const WorldAssetPlacement& placement) {
+    Transform t{};
+    t.position = placement.position;
+    t.scale = placement.scale;
+    t.yaw = placement.yaw;
+
+    Material white = materials::wall({0.48f,0.52f,0.56f,1.0f});
+    Material gray = materials::wall({0.24f,0.28f,0.32f,1.0f});
+    Material black = materials::darkMetal();
+    Material yellow = materials::wall({0.72f,0.48f,0.08f,1.0f});
+    Material glass = materials::wall({0.08f,0.18f,0.22f,1.0f});
+    Material detail = materials::darkMetal();
+    Material warmLight = materials::emissive({0.72f,0.86f,1.00f,1.0f},2.2f);
+    Material blueLight = materials::emissive({0.04f,0.58f,0.98f,1.0f},3.0f);
+
+    white.textureMix = 0.0f;
+    gray.textureMix = 0.0f;
+    black.textureMix = 0.0f;
+    yellow.textureMix = 0.0f;
+    glass.textureMix = 0.0f;
+    detail.textureMix = 0.0f;
+    warmLight.textureMix = 0.0f;
+    blueLight.textureMix = 0.0f;
+
+    submitMesh(corridorGrayMesh_, t, gray);
+    submitMesh(corridorBlackMesh_, t, black);
+    submitMesh(corridorWhiteMesh_, t, white);
+    submitMesh(corridorYellowMesh_, t, yellow);
+    submitMesh(corridorGlassMesh_, t, glass);
+    submitMesh(corridorDetailMesh_, t, detail);
+    submitMesh(corridorLightMesh_, t, warmLight);
+    submitMesh(corridorBlueMesh_, t, blueLight);
+
+    // Hazard-strip threshold at each portal entrance. Geometry stays cheap and
+    // the alternating yellow/black blocks read clearly even without source textures.
+    Material hazardYellow = materials::emissive({0.92f,0.58f,0.04f,1.0f},0.55f);
+    hazardYellow.diffuse = {0.38f,0.24f,0.03f,1.0f};
+    hazardYellow.textureMix = 0.0f;
+    Material hazardBlack = materials::darkMetal();
+    hazardBlack.diffuse = {0.025f,0.03f,0.035f,1.0f};
+    hazardBlack.textureMix = 0.0f;
+
+    for (int i=-4; i<=4; ++i) {
+        const Vec3 local{float(i)*0.62f,0.035f,1.34f};
+        const Vec3 world = placement.position + rotateY(local, placement.yaw);
+        submitBox(world,{0.27f,0.025f,0.11f},placement.yaw,
+                  (i & 1) ? hazardBlack : hazardYellow);
+    }
+}
+
+void Renderer::submitSupplyCrate(const WorldAssetPlacement& placement, std::size_t index) {
+    Transform t{};
+    t.position = placement.position;
+    t.scale = placement.scale;
+    t.yaw = placement.yaw;
+
+    Material crate = materials::darkMetal();
+    crate.diffuse = {0.15f,0.18f,0.20f,1.0f};
+    crate.textureMix = 0.0f;
+    submitMesh(supplyCrateMesh_, t, crate);
+
+    Color panelColor{0.04f,0.65f,0.96f,1.0f};
+    if ((index % 3) == 1) panelColor = {0.92f,0.58f,0.06f,1.0f};
+    if ((index % 3) == 2) panelColor = {0.08f,0.90f,0.42f,1.0f};
+    Material panel = materials::emissive(panelColor,2.1f);
+    panel.textureMix = 0.0f;
+
+    const Vec3 localPanel{
+        0.0f,
+        0.36f*placement.scale.y,
+       -0.505f*placement.scale.z
+    };
+    const Vec3 panelPos = placement.position + rotateY(localPanel,placement.yaw);
+    submitBox(panelPos,
+              {0.22f*placement.scale.x,0.075f*placement.scale.y,0.025f*placement.scale.z},
+              placement.yaw,panel);
 }
 
 Vec2 Renderer::atlasUV(const Vec2& uv, const Material& material) const {
@@ -184,11 +312,29 @@ Renderer::Vertex3D Renderer::makeVertex(const Vec3& position, const Vec3& normal
     };
 }
 
+bool Renderer::meshVisible(const MeshBounds& bounds, const Transform& transform) const {
+    if (!cameraValid_ || !bounds.valid) return true;
+    const Vec3 center = transformPoint(transform, bounds.center);
+    const float maxScale = std::max({
+        std::fabs(transform.scale.x),
+        std::fabs(transform.scale.y),
+        std::fabs(transform.scale.z)
+    });
+    return sphereVisible(currentCamera_, center, bounds.radius * maxScale);
+}
+
 void Renderer::pushTri3D(const Vertex3D& a, const Vertex3D& b, const Vertex3D& c) {
-    if (sceneVertices_.size() + 3 > kMaxVertices3D) return;
+    if (batchWouldOverflow(sceneVertices_.size(), 3, kMaxVertices3D)) {
+        flush3DBatch();
+    }
+    if (batchWouldOverflow(sceneVertices_.size(), 3, kMaxVertices3D)) {
+        WHBLogPrintf("ArenaAssault: 3D triangle exceeds batch capacity");
+        return;
+    }
     sceneVertices_.push_back(a);
     sceneVertices_.push_back(b);
     sceneVertices_.push_back(c);
+    ++stats_.submittedTriangles;
 }
 
 void Renderer::submitBox(const Vec3& center, const Vec3& half, float yaw,
@@ -227,6 +373,11 @@ void Renderer::submitBox(const Vec3& center, const Vec3& half, float yaw,
 void Renderer::submitMesh(const Mesh& mesh, const Transform& transform,
                           const Material& material) {
     if (!mesh.valid()) return;
+    if (!meshVisible(mesh.bounds(), transform)) {
+        ++stats_.culledMeshes;
+        return;
+    }
+
     const auto& vertices = mesh.vertices();
     const auto& indices = mesh.indices();
     for (std::size_t i=0;i+2<indices.size();i+=3) {
@@ -244,6 +395,14 @@ void Renderer::submitMesh(const Mesh& mesh, const Transform& transform,
 void Renderer::submitSkinnedMesh(const SkinnedMesh& mesh, const SkeletonPose& pose,
                                  const Transform& transform, const Material& material) {
     if (!mesh.valid() || pose.count == 0) return;
+
+    MeshBounds animatedBounds = mesh.bounds();
+    animatedBounds.radius *= 1.20f;
+    if (!meshVisible(animatedBounds, transform)) {
+        ++stats_.culledMeshes;
+        return;
+    }
+
     const auto& vertices = mesh.vertices();
     const auto& indices = mesh.indices();
 
@@ -285,10 +444,14 @@ void Renderer::submitSkinnedMesh(const SkinnedMesh& mesh, const SkeletonPose& po
     }
 }
 
-void Renderer::flush3D() {
+void Renderer::flush3DBatch() {
     if (sceneVertices_.empty()) return;
     void* dst = GX2RLockBufferEx(&sceneVertexBuffer_, 0);
-    if (!dst) return;
+    if (!dst) {
+        WHBLogPrintf("ArenaAssault: failed to lock 3D batch buffer");
+        sceneVertices_.clear();
+        return;
+    }
     std::memcpy(dst, sceneVertices_.data(), sceneVertices_.size()*sizeof(Vertex3D));
     GX2RUnlockBufferEx(&sceneVertexBuffer_, 0);
 
@@ -308,6 +471,12 @@ void Renderer::flush3D() {
     GX2RSetAttributeBuffer(&sceneVertexBuffer_, 0, sizeof(Vertex3D), 0);
     GX2DrawEx(GX2_PRIMITIVE_MODE_TRIANGLES,
               static_cast<std::uint32_t>(sceneVertices_.size()),0,1);
+    ++stats_.batches3D;
+    sceneVertices_.clear();
+}
+
+void Renderer::flush3D() {
+    flush3DBatch();
 }
 
 void Renderer::begin2D() {
@@ -357,13 +526,13 @@ void Renderer::uploadSceneUniforms(const Camera& camera) {
     };
 
     put4(camera.pos.x,camera.pos.y,camera.pos.z,1.0f);
-    put4(0.45f,-0.85f,0.35f,0.24f);           // direction + ambient
-    put4(0.025f,0.040f,0.065f,0.028f);        // fog rgb + density
-    put4(-8.0f,3.4f,-8.0f,11.0f);             // point light 0 pos + range
-    put4(0.06f,0.62f,0.95f,0.75f);            // point light 0 rgb + intensity
-    put4(8.0f,3.0f,8.0f,10.0f);               // point light 1 pos + range
-    put4(1.00f,0.28f,0.06f,0.46f);            // point light 1 rgb + intensity
-    put4(1.0f,0.0f,0.0f,0.0f);                // exposure + reserved
+    put4(0.45f,-0.85f,0.35f,0.24f);
+    put4(0.025f,0.040f,0.065f,0.028f);
+    put4(-8.0f,3.4f,-8.0f,11.0f);
+    put4(0.06f,0.62f,0.95f,0.75f);
+    put4(8.0f,3.0f,8.0f,10.0f);
+    put4(1.00f,0.28f,0.06f,0.46f);
+    put4(1.0f,0.0f,0.0f,0.0f);
 
     for (int i=0;i<48;++i) sceneUniformBlock_[i] = _swapF32(host[i]);
     GX2Invalidate(GX2_INVALIDATE_MODE_CPU | GX2_INVALIDATE_MODE_UNIFORM_BLOCK,
