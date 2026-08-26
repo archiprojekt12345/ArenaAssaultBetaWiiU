@@ -1,5 +1,6 @@
 #include "mesh.hpp"
 
+#include <algorithm>
 #include <cstdio>
 #include <cstring>
 
@@ -18,8 +19,6 @@ std::uint32_t readLE32(const unsigned char* p) {
 }
 
 float readLEFloat(const unsigned char* p) {
-    // readLE32 returns the numeric IEEE754 bit pattern. Copying that integer
-    // into a native float preserves the bit pattern on both LE and BE CPUs.
     const std::uint32_t u = readLE32(p);
     float f{};
     std::memcpy(&f, &u, sizeof(f));
@@ -73,6 +72,7 @@ bool Mesh::loadFromMemory(const void* data, std::size_t size) {
                                  std::size_t(indexCount) * sizeof(std::uint32_t);
     if (expected != size) return false;
 
+    BoundsAccumulator bounds;
     vertices_.resize(vertexCount);
     std::size_t off = 16;
     for (std::uint32_t i=0; i<vertexCount; ++i) {
@@ -82,8 +82,10 @@ bool Mesh::loadFromMemory(const void* data, std::size_t size) {
         v.uv       = {readLEFloat(p+off+24),readLEFloat(p+off+28)};
         v.normal = normalize(v.normal);
         vertices_[i] = v;
+        bounds.add(v.position);
         off += vertexBytes;
     }
+    bounds_ = bounds.finish();
 
     indices_.resize(indexCount);
     for (std::uint32_t i=0; i<indexCount; ++i) {
@@ -102,6 +104,7 @@ void Mesh::clear() {
     vertices_.clear();
     indices_.clear();
     sourcePath_.clear();
+    bounds_ = {};
 }
 
 bool SkinnedMesh::loadFromFile(const char* path) {
@@ -127,11 +130,12 @@ bool SkinnedMesh::loadFromMemory(const void* data, std::size_t size) {
         vertexCount > kMaxVertices || indexCount > kMaxIndices ||
         boneCount == 0 || boneCount > kMaxBones || (indexCount % 3) != 0) return false;
 
-    constexpr std::size_t vertexBytes = 64; // 8f + 4u32 + 4f
+    constexpr std::size_t vertexBytes = 64;
     const std::size_t expected = 20 + std::size_t(vertexCount) * vertexBytes +
                                  std::size_t(indexCount) * 4;
     if (expected != size) return false;
 
+    BoundsAccumulator bounds;
     vertices_.resize(vertexCount);
     std::size_t off = 20;
     for (std::uint32_t i=0; i<vertexCount; ++i) {
@@ -155,8 +159,10 @@ bool SkinnedMesh::loadFromMemory(const void* data, std::size_t size) {
         for (int k=0;k<4;++k) v.weight[k] /= sum;
         v.normal = normalize(v.normal);
         vertices_[i] = v;
+        bounds.add(v.position);
         off += vertexBytes;
     }
+    bounds_ = bounds.finish();
 
     indices_.resize(indexCount);
     for (std::uint32_t i=0; i<indexCount; ++i) {
@@ -174,6 +180,7 @@ void SkinnedMesh::clear() {
     indices_.clear();
     boneCount_ = 0;
     sourcePath_.clear();
+    bounds_ = {};
 }
 
 } // namespace aa
