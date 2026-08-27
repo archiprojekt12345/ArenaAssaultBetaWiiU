@@ -37,11 +37,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          # The full V11 corridor/crate archive in this branch is intentionally
-          # not consumed here: the old binary blob is truncated. The real V11
-          # assets are injected into the final hardware-test WUHB after this
-          # core build. The checked-in AAM1/AAM2 samples are sufficient to
-          # compile and link every runtime path.
           python3 tools/validate_assets.py
 
       - name: Download CafeGLSL host compiler
@@ -81,13 +76,14 @@ jobs:
           test -s build/ArenaAssault.wuhb
           test -s build/sd/wiiu/apps/ArenaAssault/ArenaAssault.wuhb
 
-      - name: Package Aroma SD ZIP and core
+      - name: Package Aroma SD ZIP and builder tools
         shell: bash
         run: |
           set -euo pipefail
           python3 tools/package_sd.py build/ArenaAssault.wuhb -o ArenaAssault_Aroma_SD_V11_CORE.zip
           test -s ArenaAssault_Aroma_SD_V11_CORE.zip
-          mkdir -p ci-artifact/wiiu/apps/ArenaAssault ci-artifact/core/shaders
+
+          mkdir -p ci-artifact/wiiu/apps/ArenaAssault ci-artifact/core/shaders ci-artifact/host-tools/lib
           cp build/ArenaAssault.wuhb ci-artifact/ArenaAssault_CORE.wuhb
           cp build/ArenaAssault.wuhb ci-artifact/wiiu/apps/ArenaAssault/ArenaAssault.wuhb
           cp build/arena_assault.rpx ci-artifact/core/arena_assault.rpx
@@ -95,6 +91,29 @@ jobs:
           cp content/shaders/actor3d.gsh ci-artifact/core/shaders/actor3d.gsh
           cp content/shaders/ui2d.gsh ci-artifact/core/shaders/ui2d.gsh
           cp ArenaAssault_Aroma_SD_V11_CORE.zip ci-artifact/ArenaAssault_Aroma_SD_V11_CORE.zip
+
+          # Export the exact official host wuhbtool used by the devkitPro/WUT
+          # environment, plus its shared-library dependencies. This lets us
+          # assemble a full hardware-test WUHB from the verified RPX + complete
+          # V11 content in one clean wuhbtool pass, without editing a WUHB.
+          WUHBTOOL="$(command -v wuhbtool || true)"
+          if [ -z "$WUHBTOOL" ]; then
+            WUHBTOOL="$(find /opt/devkitpro -type f -name wuhbtool -perm -111 2>/dev/null | head -n1)"
+          fi
+          test -n "$WUHBTOOL"
+          test -x "$WUHBTOOL"
+          cp -L "$WUHBTOOL" ci-artifact/host-tools/wuhbtool
+          chmod +x ci-artifact/host-tools/wuhbtool
+          ldd "$WUHBTOOL" | tee ci-artifact/host-tools/wuhbtool.ldd.txt
+          ldd "$WUHBTOOL" | awk '{for (i=1;i<=NF;i++) if ($i ~ /^\//) print $i}' | sort -u | while read -r lib; do
+            [ -f "$lib" ] && cp -L "$lib" ci-artifact/host-tools/lib/
+          done
+
+          # Source snapshot like the older full-project releases. Generated GSH
+          # files are exported separately above and will be added to the final
+          # full-source package together with the complete V11 meshes.
+          git archive --format=zip --output=ci-artifact/ArenaAssault_V11_SOURCE_BASE.zip HEAD
+
           python3 - <<'PY'
           import zipfile
           p='ArenaAssault_Aroma_SD_V11_CORE.zip'
