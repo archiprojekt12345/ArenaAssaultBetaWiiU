@@ -67,8 +67,8 @@ public:
     void submitSkinnedMeshIndexed(const SkinnedMesh& mesh, const SkeletonPose& pose,
                                   const Transform& transform, const Material& material);
 
-    // Legacy triangle-expansion implementation is kept only as dead fallback
-    // code for binary/source compatibility. Gameplay no longer calls it.
+    // Legacy triangle-expansion implementation remains compiled only so older
+    // code/binaries still link. Project callers are routed to the indexed path.
     void submitSkinnedMesh(const SkinnedMesh& mesh, const SkeletonPose& pose,
                            const Transform& transform, const Material& material);
     void flush3D();
@@ -192,3 +192,10 @@ private:
 };
 
 } // namespace aa
+
+// Keep the large legacy implementation in renderer.cpp untouched while routing
+// all normal gameplay translation units to the new indexed method. renderer.cpp
+// is compiled with AA_LEGACY_RENDERER_SOURCE so its old symbol is not renamed.
+#ifndef AA_LEGACY_RENDERER_SOURCE
+#define submitSkinnedMesh submitSkinnedMeshIndexed
+#endif
