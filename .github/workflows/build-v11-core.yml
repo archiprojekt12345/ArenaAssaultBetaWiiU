@@ -61,6 +61,7 @@ jobs:
           set -euo pipefail
           CAFEGLSL_COMPILER=/tmp/glslcompiler.elf bash ./tools/compile_shaders.sh
           test -s content/shaders/scene3d.gsh
+          test -s content/shaders/actor3d.gsh
           test -s content/shaders/ui2d.gsh
 
       - name: Configure Wii U release
@@ -91,6 +92,7 @@ jobs:
           cp build/ArenaAssault.wuhb ci-artifact/wiiu/apps/ArenaAssault/ArenaAssault.wuhb
           cp build/arena_assault.rpx ci-artifact/core/arena_assault.rpx
           cp content/shaders/scene3d.gsh ci-artifact/core/shaders/scene3d.gsh
+          cp content/shaders/actor3d.gsh ci-artifact/core/shaders/actor3d.gsh
           cp content/shaders/ui2d.gsh ci-artifact/core/shaders/ui2d.gsh
           cp ArenaAssault_Aroma_SD_V11_CORE.zip ci-artifact/ArenaAssault_Aroma_SD_V11_CORE.zip
           python3 - <<'PY'
