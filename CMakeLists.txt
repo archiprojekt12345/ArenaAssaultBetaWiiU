@@ -22,6 +22,7 @@ add_executable(arena_assault
     src/map.cpp
     src/mesh.cpp
     src/renderer.cpp
+    src/actor_renderer.cpp
     src/texture.cpp
     src/audio.cpp
     src/particle.cpp
