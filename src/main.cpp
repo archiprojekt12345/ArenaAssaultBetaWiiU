@@ -96,6 +96,7 @@ int main(int argc, char** argv) {
     }
 
     game.shutdown();
+    renderer.shutdownActorGpu();
     renderer.shutdown();
     if (sdMounted) WHBUnmountSdCard();
     WHBGfxShutdown();
