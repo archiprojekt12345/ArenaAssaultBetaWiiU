@@ -7,9 +7,10 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 set(AA_CONTENT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/content")
 set(AA_SCENE_GSH "${AA_CONTENT_DIR}/shaders/scene3d.gsh")
+set(AA_ACTOR_GSH "${AA_CONTENT_DIR}/shaders/actor3d.gsh")
 set(AA_UI_GSH    "${AA_CONTENT_DIR}/shaders/ui2d.gsh")
 
-if(NOT EXISTS "${AA_SCENE_GSH}" OR NOT EXISTS "${AA_UI_GSH}")
+if(NOT EXISTS "${AA_SCENE_GSH}" OR NOT EXISTS "${AA_ACTOR_GSH}" OR NOT EXISTS "${AA_UI_GSH}")
     message(FATAL_ERROR
         "Precompiled shaders are missing. Run tools/compile_shaders.sh (Linux/WSL) "
         "or use the included GitHub Actions workflow. The final WUHB does NOT need CafeGLSL.")
