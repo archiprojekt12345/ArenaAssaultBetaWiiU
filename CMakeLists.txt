@@ -30,6 +30,13 @@ add_executable(arena_assault
 
 target_include_directories(arena_assault PRIVATE include)
 
+# renderer.cpp still contains the retired triangle-expansion implementation.
+# Suppress the public header alias only for that translation unit; all gameplay
+# callers resolve submitSkinnedMesh to submitSkinnedMeshIndexed.
+set_source_files_properties(src/renderer.cpp PROPERTIES
+    COMPILE_DEFINITIONS AA_LEGACY_RENDERER_SOURCE
+)
+
 # WUT's CafeOS toolchain automatically links the standard libwut import archive.
 # Do not add coreinit/vpad/gx2/etc. as separate -l libraries: current WUT folds
 # Cafe OS import stubs into libwut and those standalone archives do not exist.
