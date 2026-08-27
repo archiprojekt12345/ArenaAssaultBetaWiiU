@@ -53,6 +53,7 @@ public:
 
     bool init(const char* contentRoot);
     void shutdown();
+    void shutdownActorGpu();
 
     void begin3D(const Camera& camera);
     void submitBox(const Vec3& center, const Vec3& half, float yaw,
@@ -61,9 +62,15 @@ public:
                              const Material& material);
     void submitMesh(const Mesh& mesh, const Transform& transform,
                     const Material& material);
+
+    // New V11 hot path: unique skinned vertices + dedicated indexed GPU draw.
+    void submitSkinnedMeshIndexed(const SkinnedMesh& mesh, const SkeletonPose& pose,
+                                  const Transform& transform, const Material& material);
+
+    // Legacy triangle-expansion implementation is kept only as dead fallback
+    // code for binary/source compatibility. Gameplay no longer calls it.
     void submitSkinnedMesh(const SkinnedMesh& mesh, const SkeletonPose& pose,
-                           const Transform& transform, const Material& material,
-                           std::size_t actorSlot);
+                           const Transform& transform, const Material& material);
     void flush3D();
 
     void setUITarget(UITarget target) { uiTarget_ = target; }
@@ -94,6 +101,11 @@ private:
 
     struct ActorSkinCache {
         std::vector<SkinnedVertexOutput> localVertices;
+        // Kept for the legacy function compiled in renderer.cpp; the indexed
+        // path never expands into this vector.
+        std::vector<SkinnedVertexOutput> worldVertices;
+        Vec3 lastWorldPosition{};
+
         GX2RBuffer gpuVertexBuffer{};
         std::uint32_t gpuVertexCapacity{};
         Material lastMaterial{};
@@ -159,9 +171,11 @@ private:
     RenderStats stats_{};
     std::uint32_t staticWorldBuildCount_{};
     std::uint64_t frameIndex_{};
+    std::size_t actorSubmitCursor_{};
     std::array<ActorSkinCache,kActorCacheSlots> actorSkinCache_{};
     const SkinnedMesh* actorIndexMesh_{};
     std::uint32_t actorIndexCount_{};
+    bool actorPipelineReady_{};
 
     Mesh corridorLightMesh_{};
     Mesh corridorWhiteMesh_{};
