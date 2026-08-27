@@ -43,6 +43,8 @@ public:
         std::uint32_t lowDetailActors{};
         std::uint32_t skinnedVertices{};
         std::uint32_t actorTriangles{};
+        std::uint32_t indexedActorDraws{};
+        std::uint32_t actorVertexUploads{};
         std::uint32_t staticWorldBuilds{};
         std::uint32_t staticWorldDrawBatches{};
         std::uint32_t activeParticles{};
@@ -60,7 +62,8 @@ public:
     void submitMesh(const Mesh& mesh, const Transform& transform,
                     const Material& material);
     void submitSkinnedMesh(const SkinnedMesh& mesh, const SkeletonPose& pose,
-                           const Transform& transform, const Material& material);
+                           const Transform& transform, const Material& material,
+                           std::size_t actorSlot);
     void flush3D();
 
     void setUITarget(UITarget target) { uiTarget_ = target; }
@@ -91,9 +94,12 @@ private:
 
     struct ActorSkinCache {
         std::vector<SkinnedVertexOutput> localVertices;
-        std::vector<SkinnedVertexOutput> worldVertices;
-        Vec3 lastWorldPosition{};
+        GX2RBuffer gpuVertexBuffer{};
+        std::uint32_t gpuVertexCapacity{};
+        Material lastMaterial{};
+        bool materialValid{};
         bool valid{};
+        alignas(256) float uniformBlock[64]{};
     };
 
     struct StaticWorldRange {
@@ -103,10 +109,16 @@ private:
     };
 
     bool initScenePipeline();
+    bool initActorPipeline();
     bool initUIPipeline();
     bool initBuffer(GX2RBuffer& buffer, std::size_t elemSize, std::uint32_t elemCount);
+    bool ensureActorIndexBuffer(const SkinnedMesh& mesh);
+    bool ensureActorVertexBuffer(ActorSkinCache& cache, std::uint32_t vertexCount);
+    bool uploadActorVertices(ActorSkinCache& cache, const Material& material);
+    void clearActorGpuResources();
     void destroyShaderGroup(WHBGfxShaderGroup& group);
     void bindScenePipeline();
+    void bindActorPipeline(ActorSkinCache& cache, const Transform& transform);
     void pushTri3D(const Vertex3D& a, const Vertex3D& b, const Vertex3D& c);
     void flush3DBatch();
     bool meshVisible(const MeshBounds& bounds, const Transform& transform) const;
@@ -116,6 +128,7 @@ private:
                                 const Vec2& uv, const Material& material) const;
     Vec2 atlasUV(const Vec2& uv, const Material& material) const;
     void uploadSceneUniforms(const Camera& camera);
+    void uploadActorUniforms(ActorSkinCache& cache, const Transform& transform);
 
     void loadWorldAssets();
     void clearWorldAssets();
@@ -124,8 +137,10 @@ private:
     void drawStaticWorld();
 
     WHBGfxShaderGroup sceneGroup_{};
+    WHBGfxShaderGroup actorGroup_{};
     WHBGfxShaderGroup uiGroup_{};
     GX2RBuffer sceneVertexBuffer_{};
+    GX2RBuffer actorIndexBuffer_{};
     GX2RBuffer uiTvVertexBuffer_{};
     GX2RBuffer uiDrcVertexBuffer_{};
     GX2RBuffer staticWorldBuffer_{};
@@ -144,8 +159,9 @@ private:
     RenderStats stats_{};
     std::uint32_t staticWorldBuildCount_{};
     std::uint64_t frameIndex_{};
-    std::size_t actorSubmitCursor_{};
     std::array<ActorSkinCache,kActorCacheSlots> actorSkinCache_{};
+    const SkinnedMesh* actorIndexMesh_{};
+    std::uint32_t actorIndexCount_{};
 
     Mesh corridorLightMesh_{};
     Mesh corridorWhiteMesh_{};
