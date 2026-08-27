@@ -29,14 +29,19 @@ int main() {
     assert(selectLod(10.0f, 18.0f, 8.0f) == MeshLod::Medium);
 
     assert(selectEnemyRenderTier(4.0f, false) == EnemyRenderTier::Culled);
-    assert(selectEnemyRenderTier(6.0f, true) == EnemyRenderTier::High);
-    assert(selectEnemyRenderTier(14.0f, true) == EnemyRenderTier::Medium);
+    assert(selectEnemyRenderTier(6.9f, true) == EnemyRenderTier::High);
+    assert(selectEnemyRenderTier(7.0f, true) == EnemyRenderTier::Medium);
+    assert(selectEnemyRenderTier(13.9f, true) == EnemyRenderTier::Medium);
+    assert(selectEnemyRenderTier(14.0f, true) == EnemyRenderTier::Low);
     assert(selectEnemyRenderTier(28.0f, true) == EnemyRenderTier::Low);
 
     assert(shouldRefreshMediumPose(0, 0));
     assert(!shouldRefreshMediumPose(1, 0));
+    assert(!shouldRefreshMediumPose(2, 0));
+    assert(shouldRefreshMediumPose(3, 0));
     assert(!shouldRefreshMediumPose(0, 1));
-    assert(shouldRefreshMediumPose(1, 1));
+    assert(!shouldRefreshMediumPose(1, 1));
+    assert(shouldRefreshMediumPose(2, 1));
 
     assert(!batchWouldOverflow(100, 3, 128));
     assert(batchWouldOverflow(126, 3, 128));
