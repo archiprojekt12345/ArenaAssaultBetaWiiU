@@ -29,12 +29,12 @@ enum class EnemyRenderTier {
     Low
 };
 
-// Tuned for the 42 m Arena Assault play space. High keeps the detailed AAM2
-// close to the player, Medium keeps it through ordinary combat distance, and
-// Low uses the lightweight AAM1/procedural representation for distant actors.
+// Hardware-tuned for Wii U. Keep full-rate AAM2 only in close combat,
+// amortize medium-range animation over three frames, and switch to AAM1
+// before the detailed mesh becomes a sustained frame-time cost.
 inline EnemyRenderTier selectEnemyRenderTier(float distance, bool visible,
-                                             float highToMedium = 10.0f,
-                                             float mediumToLow = 22.0f) {
+                                             float highToMedium = 7.0f,
+                                             float mediumToLow = 14.0f) {
     if (!visible) return EnemyRenderTier::Culled;
     switch (selectLod(distance, highToMedium, mediumToLow)) {
         case MeshLod::High: return EnemyRenderTier::High;
@@ -46,7 +46,7 @@ inline EnemyRenderTier selectEnemyRenderTier(float distance, bool visible,
 
 inline bool shouldRefreshMediumPose(std::uint64_t frameIndex,
                                     std::size_t actorIndex) {
-    return ((frameIndex + static_cast<std::uint64_t>(actorIndex)) & 1u) == 0u;
+    return ((frameIndex + static_cast<std::uint64_t>(actorIndex)) % 3u) == 0u;
 }
 
 inline bool batchWouldOverflow(std::size_t current, std::size_t incoming,
