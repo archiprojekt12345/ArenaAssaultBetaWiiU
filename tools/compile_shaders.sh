@@ -28,5 +28,6 @@ if [[ -z "$COMPILER" || ! -x "$COMPILER" ]]; then
 fi
 mkdir -p "$ROOT/content/shaders"
 "$COMPILER" -vs "$ROOT/shaders/scene3d.vert" -ps "$ROOT/shaders/scene3d.frag" -o "$ROOT/content/shaders/scene3d.gsh"
+"$COMPILER" -vs "$ROOT/shaders/actor3d.vert" -ps "$ROOT/shaders/actor3d.frag" -o "$ROOT/content/shaders/actor3d.gsh"
 "$COMPILER" -vs "$ROOT/shaders/ui2d.vert"    -ps "$ROOT/shaders/ui2d.frag"    -o "$ROOT/content/shaders/ui2d.gsh"
 echo "Shaders ready in content/shaders/"
