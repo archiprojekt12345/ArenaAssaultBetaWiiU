@@ -92,10 +92,7 @@ jobs:
           cp content/shaders/ui2d.gsh ci-artifact/core/shaders/ui2d.gsh
           cp ArenaAssault_Aroma_SD_V11_CORE.zip ci-artifact/ArenaAssault_Aroma_SD_V11_CORE.zip
 
-          # Export the exact official host wuhbtool used by the devkitPro/WUT
-          # environment, plus its shared-library dependencies. This lets us
-          # assemble a full hardware-test WUHB from the verified RPX + complete
-          # V11 content in one clean wuhbtool pass, without editing a WUHB.
+          # Export the exact official host wuhbtool used by devkitPro/WUT.
           WUHBTOOL="$(command -v wuhbtool || true)"
           if [ -z "$WUHBTOOL" ]; then
             WUHBTOOL="$(find /opt/devkitpro -type f -name wuhbtool -perm -111 2>/dev/null | head -n1)"
@@ -109,10 +106,33 @@ jobs:
             [ -f "$lib" ] && cp -L "$lib" ci-artifact/host-tools/lib/
           done
 
-          # Source snapshot like the older full-project releases. Generated GSH
-          # files are exported separately above and will be added to the final
-          # full-source package together with the complete V11 meshes.
-          git archive --format=zip --output=ci-artifact/ArenaAssault_V11_SOURCE_BASE.zip HEAD
+          # Full source snapshot like the older safe project releases. Use
+          # Python rather than git archive so container ownership cannot break
+          # packaging. Generated GSH files from this exact build are included.
+          python3 - <<'PY'
+          from pathlib import Path
+          import zipfile
+          root = Path('.')
+          out = Path('ci-artifact/ArenaAssault_V11_SOURCE_BASE.zip')
+          skip_roots = {'.git', 'build', 'ci-artifact'}
+          with zipfile.ZipFile(out, 'w', zipfile.ZIP_DEFLATED) as z:
+              for p in sorted(root.rglob('*')):
+                  if not p.is_file():
+                      continue
+                  rel = p.relative_to(root)
+                  if rel.parts and rel.parts[0] in skip_roots:
+                      continue
+                  z.write(p, rel.as_posix())
+          with zipfile.ZipFile(out) as z:
+              assert z.testzip() is None
+              names = set(z.namelist())
+              for required in (
+                  'CMakeLists.txt', 'src/actor_renderer.cpp', 'include/renderer.hpp',
+                  'content/shaders/scene3d.gsh', 'content/shaders/actor3d.gsh',
+                  'content/shaders/ui2d.gsh', 'meta/icon.png'):
+                  assert required in names, required
+          print(out)
+          PY
 
           python3 - <<'PY'
           import zipfile
