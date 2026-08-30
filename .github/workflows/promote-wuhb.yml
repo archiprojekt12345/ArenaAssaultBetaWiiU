@@ -1,0 +1,39 @@
+name: Promote Arena Assault WUHB
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  promote:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Extract and verify WUHB
+        shell: bash
+        run: |
+          set -euo pipefail
+          ZIP='ArenaAssault_Aroma_SD_ALPHA_0.8.3.zip'
+          TARGET='wiiu/apps/ArenaAssault/ArenaAssault.wuhb'
+          mkdir -p "$(dirname "$TARGET")"
+          unzip -p "$ZIP" 'wiiu/apps/ArenaAssault/ArenaAssault.wuhb' > "$TARGET"
+          test "$(stat -c%s "$TARGET")" = '1537124'
+          echo 'fe634edf6c5520977dbb0e6db1d115bc14d3bc3448cc7b27325ca3b322a4101b  wiiu/apps/ArenaAssault/ArenaAssault.wuhb' | sha256sum -c -
+
+      - name: Replace ZIP with final WUHB
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git rm ArenaAssault_Aroma_SD_ALPHA_0.8.3.zip
+          git add wiiu/apps/ArenaAssault/ArenaAssault.wuhb
+          git commit -m 'release: install ALPHA 0.8.3 WUHB'
+          git push
