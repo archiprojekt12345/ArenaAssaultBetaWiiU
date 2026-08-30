@@ -1,9 +1,0 @@
-build/
-dist/
-*.rpx
-*.elf
-*.wuhb
-ArenaAssault_Aroma_SD.zip
-content/shaders/*.gsh
-!content/shaders/README.txt
-__pycache__/
