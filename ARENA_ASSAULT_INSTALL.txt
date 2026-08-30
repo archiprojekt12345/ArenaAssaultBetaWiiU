@@ -1,0 +1,13 @@
+ARENA ASSAULT ALPHA 0.8.3 - AROMA
+
+1. Wylacz Wii U i wyjmij karte SD.
+2. Rozpakuj ten ZIP do katalogu glownego karty SD.
+3. Wloz karte do Wii U i uruchom Aroma.
+4. Arena Assault pojawi sie na menu Wii U.
+
+Nie trzeba kopiowac osobnych modeli, tekstur ani glslcompiler.rpl.
+
+Sterowanie menu:
+- A: rozpocznij / wznow
+- PLUS: pauza / wznow
+- B podczas pauzy: powrot do menu
