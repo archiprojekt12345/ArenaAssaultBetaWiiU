@@ -1,3 +1,7 @@
+# 0.9.5 — Interface Preview
+
+Polski interfejs, czytelniejsze punkty A/B/C i informacje o walce. Wersja testowa z osobnym zapisem. Paczka SD w folderze `downloads`.
+
 # Changelog
 
 ## ALPHA 0.8.3 — 2026-08-30
