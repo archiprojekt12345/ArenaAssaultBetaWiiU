@@ -1,5 +1,8 @@
 # Arena Assault — Wii U
+
 Cześć wszystkim...
+
+Pragne zaprezentować dziecko naszego mini "studia". AreneAsssault
 Strzelanka z widokiem zza pleców dla **Nintendo Wii U z Aroma**. W trybie Conquest dwie drużyny walczą o punkty A, B i C. Gra dla jednego gracza z botami, z mapą taktyczną na GamePadzie.
 
 **Aktualna wersja: 0.9.5 — Interface Preview (testowa).** Polski interfejs, czytelniejsze oznaczenia punktów oraz poprawione informacje o trafieniach i walce.
